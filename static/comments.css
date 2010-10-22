@@ -1,0 +1,18 @@
+div.toggle { display: inline; }
+div.comment {
+    border: 1px solid #33f;
+    background-color: #eef;
+    padding: 0.25em;
+    margin-bottom: 0.25em;
+    font-size: 80%;
+    margin-left: 1em;
+}
+form.comment {
+    margin-left: 1em;
+}
+div.username {
+    margin-bottom: 0.5em;
+}
+span.comment_error {
+    color: red;
+}
