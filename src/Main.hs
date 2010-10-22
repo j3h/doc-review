@@ -8,7 +8,9 @@ import           Snap.Types ( dir )
 import           Snap.Util.FileServe ( fileServe )
 import           Snap.Iteratee ( enumBS )
 import           Server
-import           State
+import           State.Types
+import qualified State.Disk ( new )
+import qualified State.Mem ( new )
 import           Prelude hiding (catch, mapM_)
 import           Snap.Types hiding (dir)
 import           Text.XHtmlCombinators
@@ -20,7 +22,7 @@ import Data.Foldable ( mapM_ )
 
 main :: IO ()
 main = do
-  st <- newDiskState "state"
+  st <- State.Disk.new "state"
   quickServer $
        dir "comments"
                (route [ ("single/:id", getCommentHandler st)
