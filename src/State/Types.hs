@@ -32,8 +32,8 @@ data State =
 
 data Comment =
     Comment
-    { cName :: T.Text
-    , cComment :: T.Text
+    { cName :: !T.Text
+    , cComment :: !T.Text
     } deriving (Show, Eq)
 
 instance Binary Comment where

@@ -3,64 +3,71 @@ module State.Disk
     )
 where
 
-import Data.Maybe ( fromMaybe, mapMaybe )
 import Control.Applicative ( (<$>) )
-import qualified Data.Text as T
-import qualified Data.Text.IO as T
-import System.FilePath ( (</>) )
-import System.Directory ( getDirectoryContents, createDirectoryIfMissing )
-import Control.Arrow ( second )
+import Control.Arrow       ( second )
+import Data.Binary         ( encode, decode )
+import Data.Maybe          ( fromMaybe, mapMaybe )
+import System.Directory    ( getDirectoryContents, createDirectoryIfMissing )
+import System.FilePath     ( (</>) )
+import System.IO           ( withBinaryFile, IOMode(ReadMode) )
 import qualified Data.ByteString.Lazy as B
-import Data.Binary ( encode, decode )
-import State.Types ( State(..), CommentId, commentId
-                   , ChapterId, chapterId, mkCommentId, Comment(..)
-                   )
+import qualified Data.Text            as T
+import qualified Data.Text.IO         as T
+
+import State.Types         ( State(..), CommentId, commentId , ChapterId
+                           , chapterId, mkCommentId, Comment(..) )
 
 new :: FilePath -> IO State
-new p =
-    let st = State { findComments = \cId -> readCommentsFile cId
-                   , getCounts = \chId ->
-                                 do cs <- readComments =<<
-                                          maybe getAllCommentIds return =<<
-                                          maybe (return Nothing) readChapterFile chId
-                                    return $ map (second length) cs
-                   , addComment =
-                     \cId chId c -> do
-                       case chId of
-                         Nothing -> return ()
-                         Just chap ->
-                             do cIds <- fromMaybe [] <$> readChapterFile chap
-                                writeChapterFile chap (cId:cIds)
-                       cs <- readCommentsFile cId
-                       writeCommentsFile cId (cs ++ [c])
-                   }
+new storeDir =
+    do createDirectoryIfMissing True commentsDir
+       createDirectoryIfMissing True chaptersDir
+       return $  State { findComments = findComments'
 
-        commentPath cId = p </> "comments" </> T.unpack (commentId cId)
+                       , getCounts =
+                         \chId -> do
+                           cs <- readComments =<<
+                                 maybe getAllCommentIds return =<<
+                                 maybe (return Nothing) readChapterFile chId
+                           return $ map (second length) cs
 
-        chapterPath chId = p </> "chapters" </> T.unpack (chapterId chId)
+                       , addComment =
+                         \cId chId c -> do
+                           case chId of
+                             Nothing -> return ()
+                             Just chap ->
+                                 do cIds <- fromMaybe [] <$> readChapterFile chap
+                                    writeChapterFile chap (cId:cIds)
+                           cs <- findComments' cId
+                           writeCommentsFile cId (cs ++ [c])
+                       }
+    where
+      commentsDir = storeDir </> "comments"
 
-        readCommentsFile :: CommentId -> IO [Comment]
-        readCommentsFile cId = tryRead `catch` \_ -> return []
-            where tryRead = decode <$> B.readFile (commentPath cId)
+      commentPath cId = commentsDir </> T.unpack (commentId cId)
 
-        writeCommentsFile cId = B.writeFile (commentPath cId) . encode
+      readComments :: [CommentId] -> IO [(CommentId, [Comment])]
+      readComments cIds = zip cIds `fmap` mapM findComments' cIds
 
-        readChapterFile chId = tryRead `catch` \_ -> return Nothing
-            where tryRead = do
-                    content <- T.readFile $ chapterPath chId
-                    return $ Just $ mapMaybe mkCommentId $ T.lines content
+      writeCommentsFile cId = B.writeFile (commentPath cId) . encode
 
-        writeChapterFile chId =
-            T.writeFile (chapterPath chId) . T.unlines . map commentId
+      findComments' cId = tryRead `catch` \_ -> return []
+          where
+            tryRead = withBinaryFile (commentPath cId) ReadMode $ \h ->
+                      do cs <- decode <$> B.hGetContents h
+                         length cs `seq` return cs
 
-        getAllCommentIds =
-          let ignoreFile f = (f `elem` [".", ".."])
-          in mapMaybe (mkCommentId . T.pack) .
-             filter (not . ignoreFile) <$>
-             getDirectoryContents (p </> "comments")
+      getAllCommentIds =
+          mapMaybe (mkCommentId . T.pack) <$> getDirectoryContents commentsDir
 
-        readComments cIds = zip cIds `fmap` mapM readCommentsFile cIds
-    in do
-      createDirectoryIfMissing True $ p </> "comments"
-      createDirectoryIfMissing True $ p </> "chapters"
-      return st
+      chaptersDir = storeDir </> "chapters"
+
+      chapterPath chId = chaptersDir </> T.unpack (chapterId chId)
+
+      readChapterFile chId = tryRead `catch` \_ -> return Nothing
+          where
+            tryRead = do
+              content <- T.readFile $ chapterPath chId
+              return $ Just $ mapMaybe mkCommentId $ T.lines content
+
+      writeChapterFile chId =
+          T.writeFile (chapterPath chId) . T.unlines . map commentId

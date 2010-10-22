@@ -127,6 +127,10 @@ function loadAllComments() {
   });
 }
 
+function getChapterId() {
+    return $("div.preface, div.chapter, div.appendix, div.bibliography").attr("id");
+}
+
 $(document).ready(function() {
   function loading(id) {
     return " <span id=\"comments_" + id + "\" class=\"comment\">" +
@@ -150,7 +154,7 @@ $(document).ready(function() {
   $(".chapter pre[@id]").each(function() {
     $(this).after(loading($(this).attr("id")));
   });
-  var chapid = $("div.preface, div.chapter, div.appendix, div.bibliography").attr("id");
+  var chapid = getChapterId();
   $("#chapterfeed").attr("href",
 			 $("#chapterfeed").attr("href") + chapid + "/");
   $.getJSON(location.protocol + "//" + location.host + "/comments/chapter/" +
