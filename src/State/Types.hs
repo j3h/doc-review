@@ -14,7 +14,6 @@ module State.Types
     )
 where
 
-import Data.Char ( isAlphaNum )
 import Control.Applicative ( (<$>), (<*>) )
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as E
@@ -43,17 +42,7 @@ instance Binary Comment where
     get = Comment <$> fmap E.decodeUtf8 get <*> fmap E.decodeUtf8 get
 
 mkCommentId :: T.Text -> Maybe CommentId
-mkCommentId = fmap CommentId . safeId
+mkCommentId = Just . CommentId
 
 mkChapterId :: T.Text -> Maybe ChapterId
-mkChapterId = fmap ChapterId . safeId
-
-clean :: T.Text -> T.Text
-clean =
-    T.intercalate "-" .
-    filter (not . T.null) .
-    T.splitBy (\c -> not $ isAlphaNum c)
-
-safeId :: T.Text -> Maybe T.Text
-safeId t = let s = clean t
-           in if T.null s then Nothing else Just s
+mkChapterId = Just . ChapterId

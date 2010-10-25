@@ -18,6 +18,7 @@ Executable doc-review
     base >= 4,
     haskell98,
     binary == 0.5.*,
+    base64-bytestring == 0.1.*,
     directory,
     monads-fd >= 0.1 && <0.2,
     bytestring >= 0.9.1 && <0.10,

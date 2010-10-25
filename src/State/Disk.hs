@@ -13,9 +13,23 @@ import System.IO           ( withBinaryFile, IOMode(ReadMode) )
 import qualified Data.ByteString.Lazy as B
 import qualified Data.Text            as T
 import qualified Data.Text.IO         as T
+import qualified Data.Text.Encoding   as E
+import qualified Data.ByteString.Base64 as B64
+import qualified Data.ByteString.Char8 as C
 
 import State.Types         ( State(..), CommentId, commentId , ChapterId
                            , chapterId, mkCommentId, Comment(..) )
+
+-- Encode arbitrary text as a filename that is safe to use on a POSIX
+-- filesystem (no special characters)
+safe :: T.Text -> FilePath
+safe = C.unpack . C.map safeChar . B64.encode . E.encodeUtf8
+    where
+      -- Convert the Base64 string to something that's OK to use on a
+      -- POSIX filesystem by replacing '/' with '-'.
+      safeChar '/' = '-'
+      safeChar '-' = error "Unexpected '-' in base-64 encoded string"
+      safeChar x   = x
 
 new :: FilePath -> IO State
 new storeDir =
@@ -43,7 +57,7 @@ new storeDir =
     where
       commentsDir = storeDir </> "comments"
 
-      commentPath cId = commentsDir </> T.unpack (commentId cId)
+      commentPath cId = commentsDir </> safe (commentId cId)
 
       readComments :: [CommentId] -> IO [(CommentId, [Comment])]
       readComments cIds = zip cIds `fmap` mapM findComments' cIds
@@ -61,7 +75,7 @@ new storeDir =
 
       chaptersDir = storeDir </> "chapters"
 
-      chapterPath chId = chaptersDir </> T.unpack (chapterId chId)
+      chapterPath chId = chaptersDir </> safe (chapterId chId)
 
       readChapterFile chId = tryRead `catch` \_ -> return Nothing
           where
