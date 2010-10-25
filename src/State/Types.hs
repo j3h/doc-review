@@ -41,6 +41,10 @@ instance Binary Comment where
            put $ E.encodeUtf8 comment
     get = Comment <$> fmap E.decodeUtf8 get <*> fmap E.decodeUtf8 get
 
+-- These functions allow any text content as comment and chapter ids,
+-- but we may want to be able to restrict these to allow only things
+-- that could appear in the wild (or at least some length
+-- restrictions).
 mkCommentId :: T.Text -> Maybe CommentId
 mkCommentId = Just . CommentId
 
