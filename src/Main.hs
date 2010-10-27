@@ -11,6 +11,7 @@ import           Server
 import           State.Types
 import qualified State.Disk ( new )
 import qualified State.Mem ( new )
+import qualified State.SQLite ( new )
 import           Prelude hiding (catch, mapM_)
 import           Snap.Types hiding (dir)
 import           Text.XHtmlCombinators
@@ -22,7 +23,7 @@ import Data.Foldable ( mapM_ )
 
 main :: IO ()
 main = do
-  st <- State.Disk.new "state"
+  st <- State.SQLite.new "state.db"
   quickServer $
        dir "comments"
                (route [ ("single/:id", getCommentHandler st)
@@ -61,6 +62,7 @@ submitHandler st = do
     Just cid ->
         do comment <- Comment <$> requireParam "name"
                               <*> requireParam "comment"
+                              <*> getParamUtf8 "email"
            chap <- (mkChapterId =<<) <$> getParamUtf8 "chapid"
            liftIO $ addComment st cid chap comment
            respondComments cid st
@@ -112,9 +114,13 @@ getMarkup cId cs = do
 newCommentForm :: Block a => CommentId -> XHtml a
 newCommentForm cId =
     form' (addId "/comments/submit/")
-              [A.id_ (addId "form_"), A.class_ "comment"] $ do
+              [A.id_ (addId "form_"), A.class_ "comment", A.method "post"] $ do
                 span' [A.class_ "field-name"] $ text "Name: "
                 input' [A.name "name", A.type_ "text"]
+                br
+                span' [A.class_ "field-name"] $ text "E-Mail Address: "
+                input' [A.name "email", A.type_ "text"]
+                text "(optional, will not be displayed)"
                 br
                 span' [A.class_ "field-name"] $ text "Comment: "
                 br

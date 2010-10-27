@@ -33,13 +33,16 @@ data Comment =
     Comment
     { cName :: !T.Text
     , cComment :: !T.Text
+    , cEmail :: Maybe T.Text
     } deriving (Show, Eq)
 
 instance Binary Comment where
-    put (Comment name comment) =
-        do put $ E.encodeUtf8 name
-           put $ E.encodeUtf8 comment
-    get = Comment <$> fmap E.decodeUtf8 get <*> fmap E.decodeUtf8 get
+    put (Comment name comment email) =
+        putU8 name >> putU8 comment >> put (E.encodeUtf8 <$> email)
+        where putU8 = put . E.encodeUtf8
+
+    get = Comment <$> getU8 <*> getU8 <*> (fmap E.decodeUtf8 <$> get)
+        where getU8 = E.decodeUtf8 <$> get
 
 -- These functions allow any text content as comment and chapter ids,
 -- but we may want to be able to restrict these to allow only things

@@ -29,6 +29,7 @@ Executable doc-review
     xhtml-combinators,
     json == 0.4.*,
     transformers == 0.2.*,
+    sqlite == 0.5.*,
     unix,
     text,
     containers,

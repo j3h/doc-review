@@ -10,12 +10,14 @@ import Data.Maybe          ( fromMaybe, mapMaybe )
 import System.Directory    ( getDirectoryContents, createDirectoryIfMissing )
 import System.FilePath     ( (</>) )
 import System.IO           ( withBinaryFile, IOMode(ReadMode) )
+import Data.Bits           ( (.&.), shiftR )
+import Data.Char           ( chr )
 import qualified Data.ByteString.Lazy as B
 import qualified Data.Text            as T
 import qualified Data.Text.IO         as T
 import qualified Data.Text.Encoding   as E
-import qualified Data.ByteString.Base64 as B64
-import qualified Data.ByteString.Char8 as C
+import qualified Data.ByteString      as BS
+import Data.Word ( Word8 )
 
 import State.Types         ( State(..), CommentId, commentId , ChapterId
                            , chapterId, mkCommentId, Comment(..) )
@@ -23,13 +25,28 @@ import State.Types         ( State(..), CommentId, commentId , ChapterId
 -- Encode arbitrary text as a filename that is safe to use on a POSIX
 -- filesystem (no special characters)
 safe :: T.Text -> FilePath
-safe = C.unpack . C.map safeChar . B64.encode . E.encodeUtf8
+safe = concatMap makeSafe . BS.unpack . E.encodeUtf8
     where
-      -- Convert the Base64 string to something that's OK to use on a
-      -- POSIX filesystem by replacing '/' with '-'.
-      safeChar '/' = '-'
-      safeChar '-' = error "Unexpected '-' in base-64 encoded string"
-      safeChar x   = x
+      -- Conservative set of characters that are allowed unescaped in
+      -- a filename
+      unescaped w = if or [ '0' |-| '9', 'a' |-| 'z', 'A' |-| 'Z' ]
+                    then Just c
+                    else Nothing
+          where
+            c = chr $ fromIntegral w
+            lo |-| hi = c >= lo && c <= hi
+
+      -- Keep characters that are allowed unescaped, and use '-' as an
+      -- escape sequence, followed by two hex digits for octets that
+      -- are out of range.
+      makeSafe :: Word8 -> [Char]
+      makeSafe c = maybe (hex c) return $ unescaped c
+
+      -- Convert the Word8 to a pair of hex digits
+      hex c = map hDig [c `shiftR` 4, c .&. 0x0f]
+
+      -- Convert the four-bit value into a hex digit
+      hDig = ((['0'..'9'] ++ ['a'..'f']) !!) . fromIntegral
 
 new :: FilePath -> IO State
 new storeDir =
