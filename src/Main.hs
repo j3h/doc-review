@@ -19,7 +19,11 @@ import qualified Text.XHtmlCombinators.Attributes as A
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as E
 import qualified Text.JSON as JSON
+import Data.Time.Clock.POSIX
+    ( getPOSIXTime, posixSecondsToUTCTime, POSIXTime )
+import Data.Time.Format ( formatTime )
 import Data.Foldable ( mapM_ )
+import System.Locale ( defaultTimeLocale )
 
 main :: IO ()
 main = do
@@ -63,6 +67,7 @@ submitHandler st = do
         do comment <- Comment <$> requireParam "name"
                               <*> requireParam "comment"
                               <*> getParamUtf8 "email"
+                              <*> liftIO getPOSIXTime
            chap <- (mkChapterId =<<) <$> getParamUtf8 "chapid"
            liftIO $ addComment st cid chap comment
            respondComments cid st
@@ -133,5 +138,13 @@ newCommentForm cId =
 commentMarkup :: Block a => CommentId -> Comment -> XHtml a
 commentMarkup _cId c =
     div' [A.class_ "comment"] $ do
-      div' [A.class_ "username"] $ text $ cName c
+      div' [A.class_ "username"] $
+           do text $ cName c
+              text " "
+              span' [A.class_ "date"] $ text $ fmt $ cDate c
       div' [A.class_ "comment-text"] $ text $ cComment c
+
+fmt :: POSIXTime -> T.Text
+fmt = T.pack .
+      formatTime defaultTimeLocale "%Y-%m-%d %H:%M UTC" .
+      posixSecondsToUTCTime

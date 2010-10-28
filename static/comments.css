@@ -25,3 +25,7 @@ a.commenttoggle:hover {
     text-decoration: underline;
     color: #00f;
 }
+span.date {
+    font-size: smaller;
+    color: #999;
+}
