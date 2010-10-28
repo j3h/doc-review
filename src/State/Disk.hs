@@ -18,6 +18,7 @@ import qualified Data.Text.IO         as T
 import qualified Data.Text.Encoding   as E
 import qualified Data.ByteString      as BS
 import Data.Word ( Word8 )
+import Data.List ( nub )
 
 import State.Types         ( State(..), CommentId, commentId , ChapterId
                            , chapterId, mkCommentId, Comment(..) )
@@ -65,11 +66,11 @@ new storeDir =
                          \cId chId c -> do
                            case chId of
                              Nothing -> return ()
-                             Just chap ->
-                                 do cIds <- fromMaybe [] <$> readChapterFile chap
-                                    writeChapterFile chap (cId:cIds)
+                             Just chap -> addChapter' chap [cId]
                            cs <- findComments' cId
                            writeCommentsFile cId (cs ++ [c])
+
+                       , addChapter = addChapter'
                        }
     where
       commentsDir = storeDir </> "comments"
@@ -93,6 +94,10 @@ new storeDir =
       chaptersDir = storeDir </> "chapters"
 
       chapterPath chId = chaptersDir </> safe (chapterId chId)
+
+      addChapter' chId cIds = do
+        cIds' <- fromMaybe [] <$> readChapterFile chId
+        writeChapterFile chId (nub $ cIds ++ cIds')
 
       readChapterFile chId = tryRead `catch` \_ -> return Nothing
           where

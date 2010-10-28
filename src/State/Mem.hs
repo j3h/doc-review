@@ -28,6 +28,9 @@ new = do
 
              , addComment   = \cId chId c ->
                               modifyMVar_ v $ return . addComment' cId chId c
+
+             , addChapter   = \chId cIds ->
+                              modifyMVar_ v $ return . addChapter' chId cIds
              }
 
 --------------------------------------------------
@@ -49,13 +52,15 @@ getCounts' chId st =
           let p k _ =  k `Set.member` cIds
           in Map.filterWithKey p (cms st)
 
-addComment' :: CommentId -> Maybe ChapterId -> Comment -> MemState -> MemState
-addComment' cId chId c st =
-    st { chs = case chId of
-                 Nothing   -> chs st
-                 Just chap -> Map.alter (addSet cId) chap (chs st)
-       , cms = Map.alter (addSeq c) cId $ cms st
-       }
+addChapter' :: ChapterId -> [CommentId] -> MemState -> MemState
+addChapter' chId cIds st =
+    st { chs = Map.alter addSet chId (chs st) }
     where
-      addSet x = return . (Set.insert x) . maybe Set.empty id
+      addSet = return . (Set.union $ Set.fromList cIds) . maybe Set.empty id
+
+addComment' :: CommentId -> Maybe ChapterId -> Comment -> MemState -> MemState
+addComment' cId mChId c st =
+    maybe id (\chId -> addChapter' chId [cId]) mChId $
+    st { cms = Map.alter (addSeq c) cId $ cms st }
+    where
       addSeq x = return . (S.|> x) . maybe S.empty id

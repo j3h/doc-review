@@ -20,6 +20,7 @@ import Control.Exception ( onException )
 import qualified Database.SQLite as Q
 import State.Types         ( State(..), CommentId, commentId , ChapterId
                            , chapterId, mkCommentId, Comment(..) )
+import Control.Monad ( forM_, when )
 
 -- |Open a new SQLite comment store
 new :: FilePath -> IO State
@@ -29,6 +30,7 @@ new dbName = do
   return $ State { findComments = findComments' hdl
                  , getCounts    = getCounts' hdl
                  , addComment   = addComment' hdl
+                 , addChapter   = addChapter' hdl
                  }
 
 -- Load all of the comments for a given comment id
@@ -68,6 +70,7 @@ getCounts' hdl mChId = do
                          \FROM comments JOIN chapters \
                          \ON comments.comment_id == chapters.comment_id \
                          \WHERE chapters.chapter_id = :chapter_id \
+                         \      AND chapters.chapter_id IS NOT NULL \
                          \GROUP BY comments.comment_id"
                    chIdBlob = txtBlob $ chapterId chId
                    binder = [(":chapter_id", chIdBlob)]
@@ -97,24 +100,34 @@ addComment' hdl cId mChId c =
 -- Insert a row that adds a comment for the given comment id
 insertComment :: CommentId -> Comment -> SQLiteHandle -> IO ()
 insertComment cId c hdl = do
-  let e = case cEmail c of
-            Nothing -> Q.Null
-            Just a  -> txtBlob a
   maybeErr =<< insertRowVal hdl "comments"
              [ ("comment_id", txtBlob $ commentId cId)
              , ("name", txtBlob $ cName c)
              , ("comment", txtBlob $ cComment c)
-             , ("email", e)
+             , ("email", maybe Q.Null txtBlob $ cEmail c)
              , ("date", Q.Double $ realToFrac $ cDate c)
              ]
 
 -- Insert a row that maps a comment id with a chapter
 insertChapterComment :: CommentId -> ChapterId -> SQLiteHandle -> IO ()
-insertChapterComment cId chId hdl =
-    maybeErr =<< insertRowVal hdl "chapters"
-               [ ("chapter_id", txtBlob $ chapterId chId)
-               , ("comment_id", txtBlob $ commentId cId)
+insertChapterComment cId chId hdl = do
+  let sql = "SELECT 1 FROM chapters \
+            \WHERE chapter_id = :chId AND comment_id = :cId"
+      binder = [ (":chId", txtBlob $ chapterId chId)
+               , (":cId", txtBlob $ commentId cId)
                ]
+  res <- execParamStatement hdl sql binder
+  case (res :: Either String [[Q.Row ()]]) of
+    Left err -> error err
+    Right rs -> when (null $ concat rs) $
+                maybeErr =<< insertRowVal hdl "chapters"
+                [ ("chapter_id", txtBlob $ chapterId chId)
+                , ("comment_id", txtBlob $ commentId cId)
+                ]
+
+addChapter' :: SQLiteHandle -> ChapterId -> [CommentId] -> IO ()
+addChapter' hdl chId cIds =
+    txn hdl $ forM_ cIds $ \cId -> insertChapterComment cId chId hdl
 
 -- If the tables we expect are not there, add them (to deal with the
 -- case that this is a new database)

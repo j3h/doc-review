@@ -4,7 +4,7 @@ module Main where
 import           Control.Applicative ( (<$>), (<*>), (<|>) )
 import           Control.Arrow ( first )
 import           Control.Monad.IO.Class ( liftIO )
-import           Data.Foldable ( mapM_ )
+import           Data.Foldable ( mapM_, forM_ )
 import           Data.Time.Clock.POSIX ( getPOSIXTime
                                        , posixSecondsToUTCTime, POSIXTime )
 import           Data.Time.Format ( formatTime )
@@ -20,6 +20,7 @@ import qualified Data.Text.Encoding as E
 import qualified Text.JSON as JSON
 import qualified Text.XHtmlCombinators.Attributes as A
 
+import           Analyze ( analyzeDirectory )
 import           Server
 import           State.Types
 import qualified State.Disk ( new )
@@ -29,6 +30,13 @@ import qualified State.SQLite ( new )
 main :: IO ()
 main = do
   st <- State.SQLite.new "state.db"
+
+  -- Scan the content directory for chapter HTML files and update the
+  -- database to include all of the chapter mappings
+  chapters <- analyzeDirectory "content"
+  forM_ chapters $ \(mChId, cIds) ->
+      maybe (return ()) (\chId -> addChapter st chId cIds) mChId
+
   quickServer $
        dir "comments"
                (route [ ("single/:id", getCommentHandler st)
@@ -72,6 +80,9 @@ submitHandler st = do
            chap <- (mkChapterId =<<) <$> getParamUtf8 "chapid"
            liftIO $ addComment st cid chap comment
            respondComments cid st
+
+--------------------------------------------------
+-- Snap helpers
 
 respondComments :: CommentId -> State -> Snap ()
 respondComments cid st = do

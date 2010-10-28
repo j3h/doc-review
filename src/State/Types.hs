@@ -28,6 +28,7 @@ data State =
     { findComments :: CommentId -> IO [Comment]
     , getCounts :: Maybe ChapterId -> IO [(CommentId, Int)]
     , addComment :: CommentId -> Maybe ChapterId -> Comment -> IO ()
+    , addChapter :: ChapterId -> [CommentId] -> IO ()
     }
 
 data Comment =

@@ -8,22 +8,13 @@ div.comment {
     margin-left: 1em;
 }
 form.comment {
-    margin-left: 1em;
+    margin-left: 2em;
 }
 div.username {
     margin-bottom: 0.5em;
 }
 span.comment_error {
     color: red;
-}
-a.commenttoggle {
-    font-size: smaller;
-    color: #77f;
-    text-decoration: none;
-}
-a.commenttoggle:hover {
-    text-decoration: underline;
-    color: #00f;
 }
 span.date {
     font-size: smaller;
