@@ -1,29 +1,30 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
-import Control.Monad.IO.Class ( liftIO )
-import Control.Arrow ( first )
 import           Control.Applicative ( (<$>), (<*>), (<|>) )
-import           Snap.Types ( dir )
-import           Snap.Util.FileServe ( fileServe )
+import           Control.Arrow ( first )
+import           Control.Monad.IO.Class ( liftIO )
+import           Data.Foldable ( mapM_ )
+import           Data.Time.Clock.POSIX ( getPOSIXTime
+                                       , posixSecondsToUTCTime, POSIXTime )
+import           Data.Time.Format ( formatTime )
+import           Prelude hiding (catch, mapM_)
 import           Snap.Iteratee ( enumBS )
+import           Snap.Types ( dir )
+import           Snap.Types hiding (dir)
+import           Snap.Util.FileServe ( fileServe )
+import           System.Locale ( defaultTimeLocale )
+import           Text.XHtmlCombinators
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as E
+import qualified Text.JSON as JSON
+import qualified Text.XHtmlCombinators.Attributes as A
+
 import           Server
 import           State.Types
 import qualified State.Disk ( new )
 import qualified State.Mem ( new )
 import qualified State.SQLite ( new )
-import           Prelude hiding (catch, mapM_)
-import           Snap.Types hiding (dir)
-import           Text.XHtmlCombinators
-import qualified Text.XHtmlCombinators.Attributes as A
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as E
-import qualified Text.JSON as JSON
-import Data.Time.Clock.POSIX
-    ( getPOSIXTime, posixSecondsToUTCTime, POSIXTime )
-import Data.Time.Format ( formatTime )
-import Data.Foldable ( mapM_ )
-import System.Locale ( defaultTimeLocale )
 
 main :: IO ()
 main = do
