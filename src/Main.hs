@@ -142,10 +142,9 @@ commentMarkup _cId c =
       div' [A.class_ "username"] $
            do text $ cName c
               text " "
-              span' [A.class_ "date"] $ text $ fmt $ cDate c
+              span' [A.class_ "date"] $ text $ fmtTime $ cDate c
       div' [A.class_ "comment-text"] $ text $ cComment c
-
-fmt :: POSIXTime -> T.Text
-fmt = T.pack .
-      formatTime defaultTimeLocale "%Y-%m-%d %H:%M UTC" .
-      posixSecondsToUTCTime
+    where
+      fmtTime = T.pack .
+                formatTime defaultTimeLocale "%Y-%m-%d %H:%M UTC" .
+                posixSecondsToUTCTime
