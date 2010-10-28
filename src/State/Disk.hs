@@ -40,7 +40,7 @@ safe = concatMap makeSafe . BS.unpack . E.encodeUtf8
       -- escape sequence, followed by two hex digits for octets that
       -- are out of range.
       makeSafe :: Word8 -> [Char]
-      makeSafe c = maybe (hex c) return $ unescaped c
+      makeSafe c = maybe ('-':hex c) return $ unescaped c
 
       -- Convert the Word8 to a pair of hex digits
       hex c = map hDig [c `shiftR` 4, c .&. 0x0f]
