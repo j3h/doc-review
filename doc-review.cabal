@@ -10,6 +10,11 @@ Category:            Web
 Build-type:          Simple
 Cabal-version:       >=1.6
 
+Flag test
+  Description: Build the test executable
+  Manual: True
+  Default: False
+
 Executable doc-review
   hs-source-dirs: src
   main-is: Main.hs
@@ -50,6 +55,9 @@ Executable doc-review
 Executable test
   HS-Source-Dirs: test, src
   Main-is: Main.hs
-  Build-Depends: MonadRandom,
-                 array,
-                 text == 0.7.*
+  if flag(test)
+    Build-Depends: MonadRandom,
+                   array,
+                   text == 0.7.*
+  else
+    Buildable: False

@@ -21,6 +21,7 @@ import Control.Monad ( replicateM, forM_, unless, join, replicateM_, foldM )
 import Control.Monad.Random ( getRandomR, getRandom )
 import Control.Applicative ( (<$>), (<*>) )
 import Control.Exception ( finally )
+import System.IO ( stdout, hFlush )
 import qualified Data.Text as T
 
 withTemporaryDirectory :: (FilePath -> IO a) -> IO a
@@ -136,4 +137,11 @@ randomComment = Comment <$> randomText <*> randomText <*> maybeRand randomText <
       randomTime = realToFrac <$> (getRandomR (0, 2**32) :: IO Double)
 
 main :: IO ()
-main = replicateM_ 100 $ withRandomStores doRandomOperations
+main = do
+  putStrLn "Running randomized store tests"
+  replicateM_ 100 $ do
+         withRandomStores doRandomOperations
+         putStr "."
+         hFlush stdout
+  putStrLn "\ndone. Tests passed."
+
