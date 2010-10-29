@@ -6,13 +6,17 @@ import           Control.Arrow ( first )
 import           Control.Monad.IO.Class ( liftIO )
 import           Data.Foldable ( mapM_, forM_ )
 import           Data.Time.Clock.POSIX ( getPOSIXTime
-                                       , posixSecondsToUTCTime, POSIXTime )
+                                       , posixSecondsToUTCTime )
 import           Data.Time.Format ( formatTime )
 import           Prelude hiding (catch, mapM_)
 import           Snap.Iteratee ( enumBS )
 import           Snap.Types ( dir )
 import           Snap.Types hiding (dir)
 import           Snap.Util.FileServe ( fileServe )
+import           System.Console.GetOpt ( usageInfo )
+import           System.Environment ( getArgs, getProgName )
+import           System.Exit ( exitFailure, exitSuccess )
+import           System.FilePath ( (</>) )
 import           System.Locale ( defaultTimeLocale )
 import           Text.XHtmlCombinators
 import qualified Data.Text as T
@@ -20,31 +24,67 @@ import qualified Data.Text.Encoding as E
 import qualified Text.JSON as JSON
 import qualified Text.XHtmlCombinators.Attributes as A
 
+import           Config ( Config(..), ScanType(..), parseOptions, opts )
 import           Analyze ( analyzeDirectory )
 import           Server
 import           State.Types
-import qualified State.Disk ( new )
-import qualified State.Mem ( new )
-import qualified State.SQLite ( new )
 
 main :: IO ()
 main = do
-  st <- State.SQLite.new "state.db"
+  args <- getArgs
+  cfg <-
+      case parseOptions args of
+        Left es -> do
+          pn <- getProgName
+          putStrLn $ usageInfo pn opts
+          putStrLn $ unlines es
+          exitFailure
+        Right Nothing -> do
+          pn <- getProgName
+          putStrLn $ usageInfo pn opts
+          exitSuccess
+        Right (Just c) -> return c
 
-  -- Scan the content directory for chapter HTML files and update the
-  -- database to include all of the chapter mappings
-  chapters <- analyzeDirectory "content"
+  st <- cfgStore cfg
+
+  let sc = scanDir cfg st
+      run = runServer cfg st
+  case cfgScanType cfg of
+    ScanOnly      -> sc
+    ScanOnStartup -> sc >> run
+    NoScan        -> run
+
+-- |Scan the content directory for chapter HTML files and update the
+-- database to include all of the chapter mappings
+loadChapters :: FilePath -> State -> IO ()
+loadChapters chapterDir st = do
+  chapters <- analyzeDirectory chapterDir
   forM_ chapters $ \(mChId, cIds) ->
       maybe (return ()) (\chId -> addChapter st chId cIds) mChId
 
-  quickServer $
-       dir "comments"
-               (route [ ("single/:id", getCommentHandler st)
-                      , ("chapter/:chapid/count/", getCountsHandler st)
-                      , ("submit/:id", submitHandler st)
-                      ]) <|>
-       fileServe "static" <|>
-       fileServe "content"
+runServer :: Config -> State -> IO ()
+runServer cfg =
+  let hostBS = E.encodeUtf8 $ T.pack $ cfgHostName cfg
+      sCfg = emptyServerConfig
+             { hostname = hostBS
+             , accessLog = Just $ cfgLogDir cfg </> "access.log"
+             , errorLog = Just $ cfgLogDir cfg </> "error.log"
+             , port = cfgPort cfg
+             }
+  in server sCfg . app cfg
+
+scanDir :: Config -> State -> IO ()
+scanDir = loadChapters . cfgContentDir
+
+app :: Config -> State -> Snap ()
+app cfg st =
+    dir "comments"
+            (route [ ("single/:id", getCommentHandler st)
+                   , ("chapter/:chapid/count/", getCountsHandler st)
+                   , ("submit/:id", submitHandler st)
+                   ]) <|>
+    fileServe (cfgContentDir cfg) <|>
+    fileServe (cfgStaticDir cfg)
 
 --------------------------------------------------
 -- Handlers
