@@ -1,3 +1,4 @@
+{-| Configuration and command-line arguments -}
 module Config
     ( Config(..)
     , ScanType(..)
@@ -13,32 +14,44 @@ import qualified State.Mem ( new )
 import qualified State.Disk ( new )
 import qualified State.SQLite ( new )
 
-data Config = Config { cfgStore :: !(IO State)
-                     , cfgPort :: !Int
-                     , cfgLogDir :: !FilePath
-                     , cfgHostName :: !String
-                     , cfgContentDir :: !FilePath
-                     , cfgScanType :: !ScanType
-                     , cfgStaticDir :: !FilePath
-                     }
+-- |The configurable settings for an instance of the comments server
+data Config =
+    Config
+    { cfgStore      :: !(IO State) -- ^How state is stored
+    , cfgPort       :: !Int        -- ^What TCP port to listen on
+    , cfgLogDir     :: !FilePath   -- ^Where to put the log files
+    , cfgHostName   :: !String     -- ^The hostname used by Snap
+    , cfgContentDir :: !FilePath   -- ^Where to look for the documents
+                                   -- to index and content to
+                                   -- serve. This is mapped to the
+                                   -- root of the Web server.
+    , cfgScanType   :: !ScanType   -- ^Whether to scan for updated ids
+                                   -- in the content directory
+    , cfgStaticDir  :: !FilePath   -- ^Other static content to serve
+    }
 
+-- |Default  settings (don't  save state  on disk,  run on  port 3000,
+-- store logs here, scan for ids on startup)
 defaultConfig :: Config
 defaultConfig =
     Config
-    { cfgStore = State.Mem.new
-    , cfgPort = 3000
-    , cfgLogDir = "."
-    , cfgHostName = "localhost"
+    { cfgStore      = State.Mem.new
+    , cfgPort       = 3000
+    , cfgLogDir     = "."
+    , cfgHostName   = "localhost"
     , cfgContentDir = "content"
-    , cfgStaticDir = "static"
-    , cfgScanType = ScanOnStartup
+    , cfgStaticDir  = "static"
+    , cfgScanType   = ScanOnStartup
     }
 
+-- |When/whether to scan for new commentable paragraphs in the content
+-- directory
 data ScanType = ScanOnStartup
               | ScanOnly
               | NoScan
                 deriving Eq
 
+-- All of the defined options
 data Option = OStore String
             | OPort String
             | OLogDir String
@@ -49,13 +62,15 @@ data Option = OStore String
             | OHelp
               deriving Eq
 
+-- Error monad (like either)
 data Err a = Err String | Val a
 instance Monad Err where
-    return = Val
-    fail = Err
+    return        = Val
+    fail          = Err
     (Err s) >>= _ = Err s
     (Val x) >>= f = f x
 
+-- Partition errors and successes
 errs :: [Err a] -> ([String], [a])
 errs (x:xs) = let (es, as) = errs xs
               in case x of
@@ -63,6 +78,7 @@ errs (x:xs) = let (es, as) = errs xs
                    Val x' -> (es, x':as)
 errs [] = ([], [])
 
+-- Turn an option string into something that updates the configuration
 applyOption :: Option -> Err (Config -> Config)
 applyOption (OStore sType) = do
   st <- case break (== ':') sType of
@@ -82,7 +98,13 @@ applyOption (OStaticDir str) = return $ \cfg -> cfg { cfgStaticDir = str }
 applyOption (OScan st) = return $ \cfg -> cfg { cfgScanType = st }
 applyOption OHelp = return id
 
-parseOptions :: [String] -> Either [String] (Maybe Config)
+-- |Parse command-line arguments
+parseOptions :: [String]
+             -> Either [String] (Maybe Config) -- ^List of error
+                                               -- messages or a
+                                               -- configuration. Nothing
+                                               -- means asking for
+                                               -- help.
 parseOptions args =
     case getOpt Permute opts args of
       (os, _, _) | OHelp `elem` os -> Right Nothing
