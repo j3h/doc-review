@@ -9,6 +9,7 @@ import State.Types ( State, ChapterId, mkChapterId, CommentId
                    )
 import qualified State.Mem
 import qualified State.Disk
+import qualified State.SQLite
 
 import Data.Maybe ( fromJust )
 import Data.Array.Unboxed ( UArray, listArray, bounds, (!) )
@@ -41,7 +42,7 @@ withRandomStores act = do
       mkStore d t = case t of
                       Mem    -> State.Mem.new
                       Disk   -> State.Disk.new (d </> "flat-file")
-                      SQLite -> State.Disk.new (d </> "state.db")
+                      SQLite -> State.SQLite.new (d </> "state.db")
   withTemporaryDirectory $ \d ->
       do [st1, st2] <- zip ts <$> mapM (mkStore d) ts
          act st1 st2

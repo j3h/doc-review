@@ -60,7 +60,7 @@ new storeDir =
                            cs <- readComments =<<
                                  maybe getAllCommentIds return =<<
                                  maybe (return Nothing) readChapterFile chId
-                           return $ map (second length) cs
+                           return $ filter ((> 0) . snd) $ map (second length) cs
 
                        , addComment =
                          \cId chId c -> do
