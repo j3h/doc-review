@@ -10,6 +10,11 @@ Category:            Web
 Build-type:          Simple
 Cabal-version:       >=1.6
 
+data-files:
+      static/*.css,
+      static/support/javascript/*.js,
+      static/support/icons/*.gif
+
 Flag test
   Description: Build the test executable
   Manual: True

@@ -28,6 +28,7 @@ import           Config ( Config(..), ScanType(..), parseOptions, opts, Action(.
 import           Analyze ( analyzeDirectory )
 import           Server
 import           State.Types
+import           Paths_doc_review ( getDataFileName )
 
 usage :: IO String
 usage = do
@@ -72,7 +73,11 @@ loadChapters chapterDir st = do
       maybe (return ()) (\chId -> addChapter st chId cIds) mChId
 
 runServer :: Config -> State -> IO ()
-runServer cfg =
+runServer cfg st = do
+  static <- case cfgStaticDir cfg of
+              Nothing -> getDataFileName "static"
+              Just s  -> return s
+
   let hostBS = E.encodeUtf8 $ T.pack $ cfgHostName cfg
       sCfg = emptyServerConfig
              { hostname = hostBS
@@ -80,20 +85,21 @@ runServer cfg =
              , errorLog = Just $ cfgLogDir cfg </> "error.log"
              , port = cfgPort cfg
              }
-  in server sCfg . app cfg
+
+  server sCfg $ app static cfg st
 
 scanDir :: Config -> State -> IO ()
 scanDir = loadChapters . cfgContentDir
 
-app :: Config -> State -> Snap ()
-app cfg st =
+app :: FilePath -> Config -> State -> Snap ()
+app static cfg st =
     dir "comments"
             (route [ ("single/:id", getCommentHandler st)
                    , ("chapter/:chapid/count/", getCountsHandler st)
                    , ("submit/:id", submitHandler st)
                    ]) <|>
     fileServe (cfgContentDir cfg) <|>
-    fileServe (cfgStaticDir cfg) <|>
+    fileServe static <|>
     maybe pass (ifTop . redirect) (cfgDefaultPage cfg)
 
 --------------------------------------------------

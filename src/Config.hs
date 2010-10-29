@@ -32,7 +32,7 @@ data Config =
                                     -- root of the Web server.
     , cfgScanType    :: !ScanType   -- ^Whether to scan for updated
                                     -- ids in the content directory
-    , cfgStaticDir   :: !FilePath   -- ^Other static content to serve
+    , cfgStaticDir   :: !(Maybe FilePath) -- ^Other static content to serve
     , cfgDefaultPage :: !(Maybe B.ByteString)
     -- ^Where to redirect to if no URL is requested
     }
@@ -49,7 +49,7 @@ defaultConfig =
     , cfgLogDir      = "."
     , cfgHostName    = "localhost"
     , cfgContentDir  = "content"
-    , cfgStaticDir   = "static"
+    , cfgStaticDir   = Nothing
     , cfgScanType    = ScanOnStartup
     , cfgDefaultPage = Nothing
     }
@@ -105,7 +105,8 @@ applyOption (OPort str) =
 applyOption (OLogDir str) = return $ \cfg -> cfg { cfgLogDir = str }
 applyOption (OHost str) = return $ \cfg -> cfg { cfgHostName = str }
 applyOption (OContentDir str) = return $ \cfg -> cfg { cfgContentDir = str }
-applyOption (OStaticDir str) = return $ \cfg -> cfg { cfgStaticDir = str }
+applyOption (OStaticDir str) = return $
+                               \cfg -> cfg { cfgStaticDir = Just str }
 applyOption (OScan st) = return $ \cfg -> cfg { cfgScanType = st }
 applyOption (ODefaultPage str) =
     case parseURI str of
