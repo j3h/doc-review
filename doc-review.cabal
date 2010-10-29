@@ -8,7 +8,7 @@ Maintainer:          maintainer@example.com
 Stability:           Experimental
 Category:            Web
 Build-type:          Simple
-Cabal-version:       >=1.2
+Cabal-version:       >=1.6
 
 Executable doc-review
   hs-source-dirs: src
@@ -45,3 +45,8 @@ Executable doc-review
                  -fno-warn-unused-do-bind
   else
     ghc-options: -threaded -Wall -fwarn-tabs -funbox-strict-fields -O2
+
+Executable test
+  HS-Source-Dirs: test, src
+  Main-is: Main.hs
+  Build-Depends: MonadRandom

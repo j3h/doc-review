@@ -20,8 +20,8 @@ import qualified Data.Text.Encoding as E
 import Data.Binary ( Binary(..), Get )
 import Data.Time.Clock.POSIX ( POSIXTime )
 
-newtype CommentId = CommentId { commentId :: T.Text } deriving (Ord, Eq)
-newtype ChapterId = ChapterId { chapterId :: T.Text } deriving (Ord, Eq)
+newtype CommentId = CommentId { commentId :: T.Text } deriving (Ord, Eq, Show)
+newtype ChapterId = ChapterId { chapterId :: T.Text } deriving (Ord, Eq, Show)
 
 data State =
     State
