@@ -9,6 +9,8 @@ Stability:           Experimental
 Category:            Web
 Build-type:          Simple
 Cabal-version:       >=1.6
+License:             BSD3
+License-File:        LICENSE
 
 data-files:
       static/*.css,
@@ -34,7 +36,7 @@ Executable doc-review
     filepath >= 1.1 && <1.2,
     haskell98,
     heist >= 0.2.2 && <0.3,
-    hexpat >= 0.18.2 && <0.19,
+    hexpat >= 0.18.2 && <0.20,
     json == 0.4.*,
     MonadCatchIO-transformers,
     monads-fd >= 0.1 && <0.2,
@@ -44,7 +46,7 @@ Executable doc-review
     snap-server >= 0.2 && <0.3,
     sqlite == 0.5.*,
     tagchup == 0.4.*,
-    text == 0.7.*,
+    text >= 0.7 && < 0.11,
     time == 1.1.*,
     transformers == 0.2.*,
     unix,
@@ -63,6 +65,6 @@ Executable test
   if flag(test)
     Build-Depends: MonadRandom,
                    array,
-                   text == 0.7.*
+                   text >= 0.7 && < 0.11
   else
     Buildable: False
