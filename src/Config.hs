@@ -2,12 +2,17 @@
 module Config
     ( Config(..)
     , ScanType(..)
+    , Action(..)
     , parseOptions
     , opts
     )
 where
 
+import Network.URI ( parseURI )
 import System.Console.GetOpt
+import qualified Data.ByteString as B
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as E
 
 import State.Types ( State )
 import qualified State.Mem ( new )
@@ -17,31 +22,36 @@ import qualified State.SQLite ( new )
 -- |The configurable settings for an instance of the comments server
 data Config =
     Config
-    { cfgStore      :: !(IO State) -- ^How state is stored
-    , cfgPort       :: !Int        -- ^What TCP port to listen on
-    , cfgLogDir     :: !FilePath   -- ^Where to put the log files
-    , cfgHostName   :: !String     -- ^The hostname used by Snap
-    , cfgContentDir :: !FilePath   -- ^Where to look for the documents
-                                   -- to index and content to
-                                   -- serve. This is mapped to the
-                                   -- root of the Web server.
-    , cfgScanType   :: !ScanType   -- ^Whether to scan for updated ids
-                                   -- in the content directory
-    , cfgStaticDir  :: !FilePath   -- ^Other static content to serve
+    { cfgStore       :: !(IO State) -- ^How state is stored
+    , cfgPort        :: !Int        -- ^What TCP port to listen on
+    , cfgLogDir      :: !FilePath   -- ^Where to put the log files
+    , cfgHostName    :: !String     -- ^The hostname used by Snap
+    , cfgContentDir  :: !FilePath   -- ^Where to look for the
+                                    -- documents to index and content
+                                    -- to serve. This is mapped to the
+                                    -- root of the Web server.
+    , cfgScanType    :: !ScanType   -- ^Whether to scan for updated
+                                    -- ids in the content directory
+    , cfgStaticDir   :: !FilePath   -- ^Other static content to serve
+    , cfgDefaultPage :: !(Maybe B.ByteString)
+    -- ^Where to redirect to if no URL is requested
     }
+
+data Action = Help | Run Config
 
 -- |Default  settings (don't  save state  on disk,  run on  port 3000,
 -- store logs here, scan for ids on startup)
 defaultConfig :: Config
 defaultConfig =
     Config
-    { cfgStore      = State.Mem.new
-    , cfgPort       = 3000
-    , cfgLogDir     = "."
-    , cfgHostName   = "localhost"
-    , cfgContentDir = "content"
-    , cfgStaticDir  = "static"
-    , cfgScanType   = ScanOnStartup
+    { cfgStore       = State.Mem.new
+    , cfgPort        = 3000
+    , cfgLogDir      = "."
+    , cfgHostName    = "localhost"
+    , cfgContentDir  = "content"
+    , cfgStaticDir   = "static"
+    , cfgScanType    = ScanOnStartup
+    , cfgDefaultPage = Nothing
     }
 
 -- |When/whether to scan for new commentable paragraphs in the content
@@ -59,6 +69,7 @@ data Option = OStore String
             | OContentDir String
             | OStaticDir String
             | OScan ScanType
+            | ODefaultPage String
             | OHelp
               deriving Eq
 
@@ -96,20 +107,21 @@ applyOption (OHost str) = return $ \cfg -> cfg { cfgHostName = str }
 applyOption (OContentDir str) = return $ \cfg -> cfg { cfgContentDir = str }
 applyOption (OStaticDir str) = return $ \cfg -> cfg { cfgStaticDir = str }
 applyOption (OScan st) = return $ \cfg -> cfg { cfgScanType = st }
+applyOption (ODefaultPage str) =
+    case parseURI str of
+      Nothing -> fail $ "Not a valid URI: " ++ show str
+      Just _  -> return $ \cfg ->
+                 cfg { cfgDefaultPage = Just $ E.encodeUtf8 $ T.pack str }
 applyOption OHelp = return id
 
 -- |Parse command-line arguments
-parseOptions :: [String]
-             -> Either [String] (Maybe Config) -- ^List of error
-                                               -- messages or a
-                                               -- configuration. Nothing
-                                               -- means asking for
-                                               -- help.
+parseOptions :: [String] -> Either [String] Action
+                -- ^List of error messages or a configuration.
 parseOptions args =
     case getOpt Permute opts args of
-      (os, _, _) | OHelp `elem` os -> Right Nothing
+      (os, _, _) | OHelp `elem` os -> Right Help
       (os, [], []) -> case errs $ map applyOption os of
-                        ([], fs) -> Right $ Just $ foldr ($) defaultConfig fs
+                        ([], fs) -> Right $ Run $ foldr ($) defaultConfig fs
                         (es, _)  -> Left es
       (_, extra, es) ->
           Left $ case extra of
@@ -135,6 +147,8 @@ opts = [ Option "s" ["store"] (ReqArg OStore "STORE")
          "Store the error and access logs in this directory"
        , Option "" ["host"] (ReqArg OHost "HOSTNAME")
          "Use this as the Web server host (not for binding address)"
+       , Option "" ["default-page"] (ReqArg ODefaultPage "URL")
+         "Where the server should redirect when the URL / is requested"
        , Option "" ["help"] (NoArg OHelp)
          "Get usage"
        ]

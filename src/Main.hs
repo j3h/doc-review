@@ -24,10 +24,21 @@ import qualified Data.Text.Encoding as E
 import qualified Text.JSON as JSON
 import qualified Text.XHtmlCombinators.Attributes as A
 
-import           Config ( Config(..), ScanType(..), parseOptions, opts )
+import           Config ( Config(..), ScanType(..), parseOptions, opts, Action(..) )
 import           Analyze ( analyzeDirectory )
 import           Server
 import           State.Types
+
+usage :: IO String
+usage = do
+  pn <- getProgName
+  return $ unlines $
+             [ "Document review Web application, based on\
+               \ http://book.realworldhaskell.org/"
+             , ""
+             , "Usage: " ++ pn ++ " [options]"
+             , usageInfo pn opts
+             ]
 
 main :: IO ()
 main = do
@@ -35,15 +46,13 @@ main = do
   cfg <-
       case parseOptions args of
         Left es -> do
-          pn <- getProgName
-          putStrLn $ usageInfo pn opts
+          putStr =<< usage
           putStrLn $ unlines es
           exitFailure
-        Right Nothing -> do
-          pn <- getProgName
-          putStrLn $ usageInfo pn opts
+        Right Help -> do
+          putStr =<< usage
           exitSuccess
-        Right (Just c) -> return c
+        Right (Run c) -> return c
 
   st <- cfgStore cfg
 
@@ -84,7 +93,8 @@ app cfg st =
                    , ("submit/:id", submitHandler st)
                    ]) <|>
     fileServe (cfgContentDir cfg) <|>
-    fileServe (cfgStaticDir cfg)
+    fileServe (cfgStaticDir cfg) <|>
+    maybe pass (ifTop . redirect) (cfgDefaultPage cfg)
 
 --------------------------------------------------
 -- Handlers

@@ -28,6 +28,7 @@ Executable doc-review
     json == 0.4.*,
     MonadCatchIO-transformers,
     monads-fd >= 0.1 && <0.2,
+    network == 2.2.*,
     old-locale == 1.0.*,
     snap-core >= 0.2 && <0.3,
     snap-server >= 0.2 && <0.3,
