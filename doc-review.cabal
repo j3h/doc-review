@@ -33,7 +33,7 @@ Executable doc-review
     snap-server >= 0.2 && <0.3,
     sqlite == 0.5.*,
     tagchup == 0.4.*,
-    text,
+    text == 0.7.*,
     time == 1.1.*,
     transformers == 0.2.*,
     unix,
@@ -49,4 +49,6 @@ Executable doc-review
 Executable test
   HS-Source-Dirs: test, src
   Main-is: Main.hs
-  Build-Depends: MonadRandom
+  Build-Depends: MonadRandom,
+                 array,
+                 text == 0.7.*

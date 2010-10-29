@@ -78,8 +78,8 @@ getCounts' hdl mChId = do
 
   let convertRow [(_, Q.Blob cIdBS), (_, Q.Int cnt)] =
           case mkCommentId $ E.decodeUtf8 cIdBS of
-            Nothing -> []
-            Just cId -> [(cId, fromIntegral cnt)]
+            Just cId | cnt > 0 -> [(cId, fromIntegral cnt)]
+            _ -> []
       convertRow _ = []
   case res of
     Left err -> do

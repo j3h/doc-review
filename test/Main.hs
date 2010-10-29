@@ -1,17 +1,25 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Main
     ( main )
 where
 
-import State.Types ( State, ChapterId )
+import State.Types ( State, ChapterId, mkChapterId, CommentId
+                   , Comment, getCounts, findComments, mkCommentId
+                   , addChapter
+                   )
 import qualified State.Mem
 import qualified State.Disk
 
+import Data.Maybe ( fromJust )
+import Data.Array.Unboxed ( UArray, listArray, bounds, (!) )
+import Data.Char ( isPrint, chr )
 import System.Directory ( createDirectory, getTemporaryDirectory, removeDirectoryRecursive )
 import System.FilePath ( (</>) )
-import Control.Monad ( replicateM )
-import Control.Monad.Random ( getRandomR )
-import Control.Applicative ( (<$>) )
+import Control.Monad ( replicateM, forM_, unless, join, replicateM_, foldM )
+import Control.Monad.Random ( getRandomR, getRandom )
+import Control.Applicative ( (<$>), (<*>) )
 import Control.Exception ( finally )
+import qualified Data.Text as T
 
 withTemporaryDirectory :: (FilePath -> IO a) -> IO a
 withTemporaryDirectory act = do
@@ -38,10 +46,81 @@ withRandomStores act = do
       do [st1, st2] <- zip ts <$> mapM (mkStore d) ts
          act st1 st2
 
-data Operation = GetCounts (Maybe ChapterId) deriving Show
+data Operation = GetCounts (Maybe ChapterId)
+               | FindComments CommentId
+               | AddChapter ChapterId [CommentId]
+                 deriving Show
+
+data Result = Unit
+            | Counts [(CommentId, Int)]
+            | Comments [Comment] deriving (Eq, Show)
+
+applyOp :: Operation -> State -> IO Result
+applyOp (GetCounts p) st = Counts <$> getCounts st p
+applyOp (FindComments cId) st = Comments <$> findComments st cId
+applyOp (AddChapter chId cIds) st = addChapter st chId cIds >> return Unit
+
+choice :: [a] -> IO a
+choice xs = (xs !!) <$> getRandomR (0, length xs - 1)
 
 randomOp :: IO Operation
-randomOp = return $ GetCounts Nothing
+randomOp = join $ choice $
+           [ GetCounts <$> maybeRand randomChapterId
+           , FindComments <$> randomCommentId
+           , let cIds = do
+                   n <- getRandomR (0, 100)
+                   replicateM n $ randomCommentId
+             in AddChapter <$> randomChapterId <*> cIds
+           ]
+
+maybeRand :: IO a -> IO (Maybe a)
+maybeRand x = do
+  doGen <- getRandom
+  if doGen then Just <$> x else return Nothing
+
+randomChapterId :: IO ChapterId
+randomChapterId = fromJust . mkChapterId <$> randomText
+
+randomCommentId :: IO CommentId
+randomCommentId = fromJust . mkCommentId <$> randomText
+
+usableChars :: UArray Int Char
+usableChars = listArray (0, length cs - 1) cs
+    where
+      cs = filter isPrint [chr 0..chr 127]
+
+randomText :: IO T.Text
+randomText = join $ choice [commonValue]
+    where
+      -- completelyRandom = do
+      --   let randomChar = do
+      --         i <- getRandomR $ bounds usableChars
+      --         return $ usableChars ! i
+      --   n <- getRandomR (2, 40)
+      --   T.pack <$> replicateM n randomChar
+      commonValue = choice ["alpha", "beta", "gamma", "delta"]
+
+doRandomOperations :: (StoreType, State) -> (StoreType, State) -> IO ()
+doRandomOperations (ty1, st1) (ty2, st2) = do
+  n <- getRandomR (1, 200)
+  ops <- replicateM n randomOp
+  _ <- foldM (\soFar op -> do
+                r1 <- applyOp op st1
+                r2 <- applyOp op st2
+                unless (r1 == r2) $ do
+                  putStrLn $ "Got different results for " ++ show op ++ " on " ++
+                           show ty1 ++ " and " ++ show ty2
+                  forM_ (soFar [op]) print
+                  putStrLn $ "Results were:"
+                  print ty1
+                  print r1
+                  putStrLn $ replicate 50 '-'
+                  print ty2
+                  print r2
+                  putStrLn $ replicate 50 '-'
+                  error "Test failed"
+                return (soFar . (op:))) id ops
+  return ()
 
 main :: IO ()
-main = withRandomStores $ \(ty1, st1) (ty2, st2) -> print (ty1, ty2)
+main = replicateM_ 100 $ withRandomStores doRandomOperations

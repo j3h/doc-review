@@ -89,7 +89,9 @@ new storeDir =
                          length cs `seq` return cs
 
       getAllCommentIds =
-          mapMaybe (mkCommentId . T.pack) <$> getDirectoryContents commentsDir
+          mapMaybe (mkCommentId . T.pack) . filter okId <$> getDirectoryContents commentsDir
+              where
+                okId = not . (`elem` [".", ".."])
 
       chaptersDir = storeDir </> "chapters"
 
