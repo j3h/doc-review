@@ -44,13 +44,16 @@ emptyMemState :: MemState
 emptyMemState = MemState Map.empty Map.empty
 
 getCounts' :: Maybe ChapterId -> MemState -> [(CommentId, Int)]
-getCounts' chId st =
+getCounts' mChId st =
     map (second S.length) $ Map.toList $
-    case chId >>= (`Map.lookup` chs st) of
+    case mChId of
       Nothing   -> cms st
-      Just cIds ->
-          let p k _ =  k `Set.member` cIds
-          in Map.filterWithKey p (cms st)
+      Just chId ->
+          case Map.lookup chId $ chs st of
+            Nothing -> Map.empty
+            Just cIds ->
+                let p k _ =  k `Set.member` cIds
+                in Map.filterWithKey p (cms st)
 
 addChapter' :: ChapterId -> [CommentId] -> MemState -> MemState
 addChapter' chId cIds st =

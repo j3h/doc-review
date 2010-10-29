@@ -19,6 +19,7 @@ import qualified Data.Text.Encoding   as E
 import qualified Data.ByteString      as BS
 import Data.Word ( Word8 )
 import Data.List ( nub )
+import Numeric ( readHex )
 
 import State.Types         ( State(..), CommentId, commentId , ChapterId
                            , chapterId, mkCommentId, Comment(..) )
@@ -49,6 +50,15 @@ safe = concatMap makeSafe . BS.unpack . E.encodeUtf8
       -- Convert the four-bit value into a hex digit
       hDig = ((['0'..'9'] ++ ['a'..'f']) !!) . fromIntegral
 
+decodeFileName :: FilePath -> T.Text
+decodeFileName = T.pack . go
+    where
+      go ('-':x:y:cs) = case readHex [x, y] of
+                          [(n, [])] -> chr n:go cs
+                          _ -> '-':go (x:y:cs)
+      go (c:cs) = c:go cs
+      go [] = []
+
 new :: FilePath -> IO State
 new storeDir =
     do createDirectoryIfMissing True commentsDir
@@ -56,10 +66,11 @@ new storeDir =
        return $  State { findComments = findComments'
 
                        , getCounts =
-                         \chId -> do
-                           cs <- readComments =<<
-                                 maybe getAllCommentIds return =<<
-                                 maybe (return Nothing) readChapterFile chId
+                         \mChId -> do
+                           cIds <- case mChId of
+                                     Nothing -> getAllCommentIds
+                                     Just chId -> maybe [] id <$> readChapterFile chId
+                           cs <- readComments cIds
                            return $ filter ((> 0) . snd) $ map (second length) cs
 
                        , addComment =
@@ -89,7 +100,8 @@ new storeDir =
                          length cs `seq` return cs
 
       getAllCommentIds =
-          mapMaybe (mkCommentId . T.pack) . filter okId <$> getDirectoryContents commentsDir
+          mapMaybe (mkCommentId . decodeFileName) . filter okId
+                       <$> getDirectoryContents commentsDir
               where
                 okId = not . (`elem` [".", ".."])
 

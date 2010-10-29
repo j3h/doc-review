@@ -5,12 +5,13 @@ where
 
 import State.Types ( State, ChapterId, mkChapterId, CommentId
                    , Comment, getCounts, findComments, mkCommentId
-                   , addChapter
+                   , addChapter, Comment(..), addComment
                    )
 import qualified State.Mem
 import qualified State.Disk
 import qualified State.SQLite
 
+import Data.List ( sort )
 import Data.Maybe ( fromJust )
 import Data.Array.Unboxed ( UArray, listArray, bounds, (!) )
 import Data.Char ( isPrint, chr )
@@ -50,6 +51,7 @@ withRandomStores act = do
 data Operation = GetCounts (Maybe ChapterId)
                | FindComments CommentId
                | AddChapter ChapterId [CommentId]
+               | AddComment CommentId (Maybe ChapterId) Comment
                  deriving Show
 
 data Result = Unit
@@ -57,9 +59,10 @@ data Result = Unit
             | Comments [Comment] deriving (Eq, Show)
 
 applyOp :: Operation -> State -> IO Result
-applyOp (GetCounts p) st = Counts <$> getCounts st p
+applyOp (GetCounts p) st = Counts . sort <$> getCounts st p
 applyOp (FindComments cId) st = Comments <$> findComments st cId
 applyOp (AddChapter chId cIds) st = addChapter st chId cIds >> return Unit
+applyOp (AddComment cId mChId c) st = addComment st cId mChId c >> return Unit
 
 choice :: [a] -> IO a
 choice xs = (xs !!) <$> getRandomR (0, length xs - 1)
@@ -72,6 +75,10 @@ randomOp = join $ choice $
                    n <- getRandomR (0, 100)
                    replicateM n $ randomCommentId
              in AddChapter <$> randomChapterId <*> cIds
+           , AddComment
+             <$> randomCommentId
+             <*> maybeRand randomChapterId
+             <*> randomComment
            ]
 
 maybeRand :: IO a -> IO (Maybe a)
@@ -91,14 +98,14 @@ usableChars = listArray (0, length cs - 1) cs
       cs = filter isPrint [chr 0..chr 127]
 
 randomText :: IO T.Text
-randomText = join $ choice [commonValue]
+randomText = join $ choice [commonValue, completelyRandom]
     where
-      -- completelyRandom = do
-      --   let randomChar = do
-      --         i <- getRandomR $ bounds usableChars
-      --         return $ usableChars ! i
-      --   n <- getRandomR (2, 40)
-      --   T.pack <$> replicateM n randomChar
+      completelyRandom = do
+        let randomChar = do
+              i <- getRandomR $ bounds usableChars
+              return $ usableChars ! i
+        n <- getRandomR (2, 40)
+        T.pack <$> replicateM n randomChar
       commonValue = choice ["alpha", "beta", "gamma", "delta"]
 
 doRandomOperations :: (StoreType, State) -> (StoreType, State) -> IO ()
@@ -122,6 +129,11 @@ doRandomOperations (ty1, st1) (ty2, st2) = do
                   error "Test failed"
                 return (soFar . (op:))) id ops
   return ()
+
+randomComment :: IO Comment
+randomComment = Comment <$> randomText <*> randomText <*> maybeRand randomText <*> randomTime
+    where
+      randomTime = realToFrac <$> (getRandomR (0, 2**32) :: IO Double)
 
 main :: IO ()
 main = replicateM_ 100 $ withRandomStores doRandomOperations
