@@ -186,22 +186,25 @@ getMarkup cId cs = do
 
 newCommentForm :: Block a => CommentId -> XHtml a
 newCommentForm cId =
-    form' (addId "/comments/submit/")
-              [idAttr "form_", A.class_ "comment", A.method "post"] $ table $ tbody $ do
-                tr $ do
-                  th $ label' [forAttr "comment_"] $ text "Comment:"
-                  td $ textarea' 10 40 [A.name "comment", idAttr "comment_"] ""
-                tr $ do
-                  th $ label' [forAttr "name_"] $ text "Name:"
-                  td $ input' [A.name "name", A.type_ "text", idAttr "name_"]
-                tr $ do
-                  th $ label' [forAttr "email_"] $ text "E-Mail Address: "
-                  td $ do
-                       input' [A.name "email", A.type_ "text", idAttr "email_"]
-                       text " (optional, will not be displayed)"
-                tr $ do
-                  td empty
-                  td $ input' [A.name "submit", A.type_ "submit"]
+    form' (addId "/comments/submit/") [ idAttr "form_"
+                                      , A.class_ "comment"
+                                      , A.method "post"
+                                      ] $
+    table $ tbody $ do
+      tr $ do
+        th $ label' [forAttr "comment_"] $ text "Comment:"
+        td $ textarea' 10 40 [A.name "comment", idAttr "comment_"] ""
+      tr $ do
+        th $ label' [forAttr "name_"] $ text "Name:"
+        td $ input' [A.name "name", A.type_ "text", idAttr "name_"]
+      tr $ do
+        th $ label' [forAttr "email_"] $ text "E-Mail Address: "
+        td $ do
+             input' [A.name "email", A.type_ "text", idAttr "email_"]
+             text " (optional, will not be displayed)"
+      tr $ do
+        td empty
+        td $ input' [A.name "submit", A.type_ "submit"]
     where
       forAttr t = A.for (addId t)
       idAttr t = A.id_ (addId t)
