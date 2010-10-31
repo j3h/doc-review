@@ -11,6 +11,8 @@ module State.Types
     , mkCommentId
 
     , State(..)
+    , SessionId(..)
+    , SessionInfo(..)
     )
 where
 
@@ -19,9 +21,14 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as E
 import Data.Binary ( Binary(..), Get )
 import Data.Time.Clock.POSIX ( POSIXTime )
+import qualified Data.ByteString as B
 
 newtype CommentId = CommentId { commentId :: T.Text } deriving (Ord, Eq, Show)
 newtype ChapterId = ChapterId { chapterId :: T.Text } deriving (Ord, Eq, Show)
+
+data SessionInfo = SessionInfo { siName :: !T.Text
+                               , siEmail :: !(Maybe T.Text)
+                               } deriving (Eq, Show)
 
 data State =
     State
@@ -29,6 +36,7 @@ data State =
     , getCounts :: Maybe ChapterId -> IO [(CommentId, Int)]
     , addComment :: CommentId -> Maybe ChapterId -> Comment -> IO ()
     , addChapter :: ChapterId -> [CommentId] -> IO ()
+    , getLastInfo :: SessionId -> IO (Maybe SessionInfo)
     }
 
 data Comment =
@@ -37,14 +45,18 @@ data Comment =
     , cComment :: !T.Text
     , cEmail :: Maybe T.Text
     , cDate :: !POSIXTime
+    , cSession :: !SessionId
     } deriving (Show, Eq)
 
+newtype SessionId = SessionId { sidBS :: B.ByteString } deriving ( Eq, Show, Ord )
+
 instance Binary Comment where
-    put (Comment name comment email date) =
+    put (Comment name comment email date sid) =
         do putU8 name
            putU8 comment
            put (E.encodeUtf8 <$> email)
            put (realToFrac date :: Double)
+           put $ sidBS sid
         where putU8 = put . E.encodeUtf8
 
     get = Comment
@@ -52,6 +64,7 @@ instance Binary Comment where
           <*> getU8
           <*> (fmap E.decodeUtf8 <$> get)
           <*> fmap realToFrac (get :: Get Double)
+          <*> fmap SessionId get
         where getU8 = E.decodeUtf8 <$> get
 
 -- These functions allow any text content as comment and chapter ids,

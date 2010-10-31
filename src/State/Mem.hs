@@ -5,6 +5,9 @@ where
 
 import State.Types
 
+import Data.Maybe ( listToMaybe )
+import Data.Function ( on )
+import Data.List ( sortBy )
 import qualified Data.Sequence as S
 import qualified Data.Set as Set
 import qualified Data.Map as Map
@@ -31,6 +34,9 @@ new = do
 
              , addChapter   = \chId cIds ->
                               modifyMVar_ v $ return . addChapter' chId cIds
+
+             , getLastInfo  = \sid ->
+                              withMVar v $ return . getInfo' sid
              }
 
 --------------------------------------------------
@@ -42,6 +48,20 @@ data MemState = MemState { chs :: Map.Map ChapterId (Set.Set CommentId)
 
 emptyMemState :: MemState
 emptyMemState = MemState Map.empty Map.empty
+
+getInfo' :: SessionId -> MemState -> Maybe SessionInfo
+getInfo' sId =
+    fmap toInfo .
+    listToMaybe .
+    take 1 .
+    reverse .
+    sortBy (compare `on` cDate) .
+    filter ((== sId) . cSession) .
+    concatMap toList .
+    Map.elems .
+    cms
+    where
+      toInfo c = SessionInfo (cName c) (cEmail c)
 
 getCounts' :: Maybe ChapterId -> MemState -> [(CommentId, Int)]
 getCounts' mChId st =

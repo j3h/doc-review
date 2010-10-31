@@ -48,6 +48,7 @@ Executable doc-review
     hexpat >= 0.18.2 && <0.20,
     json == 0.4.*,
     MonadCatchIO-transformers,
+    MonadRandom == 0.1.*,
     monads-fd >= 0.1 && <0.2,
     network == 2.2.*,
     old-locale == 1.0.*,

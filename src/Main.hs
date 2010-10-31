@@ -3,8 +3,11 @@ module Main where
 
 import           Control.Applicative ( (<$>), (<*>), (<|>) )
 import           Control.Arrow ( first )
+import           Control.Monad ( replicateM, guard )
 import           Control.Monad.IO.Class ( liftIO )
+import           Control.Monad.Random ( getRandomR )
 import           Data.Foldable ( mapM_, forM_ )
+import           Data.Time.Clock ( getCurrentTime, addUTCTime )
 import           Data.Time.Clock.POSIX ( getPOSIXTime
                                        , posixSecondsToUTCTime )
 import           Data.Time.Format ( formatTime )
@@ -19,11 +22,12 @@ import           System.Exit ( exitFailure, exitSuccess )
 import           System.FilePath ( (</>) )
 import           System.Locale ( defaultTimeLocale )
 import           Text.XHtmlCombinators
-import           Text.XHtmlCombinators.Escape ( escape )
+import           Text.XHtmlCombinators.Escape ( escape, escapeAttr )
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as E
 import qualified Text.JSON as JSON
 import qualified Text.XHtmlCombinators.Attributes as A
+import qualified Data.ByteString.Char8 as B
 
 import           Config ( Config(..), ScanType(..), parseOptions, opts, Action(..) )
 import           Analyze ( analyzeDirectory )
@@ -87,21 +91,57 @@ runServer cfg st = do
              , port = cfgPort cfg
              }
 
-  server sCfg $ app static cfg st
+  server sCfg $ trackSession $ app static cfg st
 
 scanDir :: Config -> State -> IO ()
 scanDir = loadChapters . cfgContentDir
 
-app :: FilePath -> Config -> State -> Snap ()
-app static cfg st =
+app :: FilePath -> Config -> State -> SessionId -> Snap ()
+app static cfg st sessionId =
     dir "comments"
-            (route [ ("single/:id", getCommentHandler st)
+            (route [ ("single/:id", getCommentHandler st sessionId)
                    , ("chapter/:chapid/count/", getCountsHandler st)
-                   , ("submit/:id", submitHandler st)
+                   , ("submit/:id", submitHandler st sessionId)
                    ]) <|>
     fileServe (cfgContentDir cfg) <|>
     fileServe static <|>
     maybe pass (ifTop . redirect) (cfgDefaultPage cfg)
+
+newSessionId :: IO SessionId
+newSessionId = SessionId . B.pack <$> replicateM 24 selectRandomSessionChar
+    where
+      selectRandomSessionChar =
+          B.index sessionChars <$> getRandomR (0, B.length sessionChars - 1)
+
+sessionChars :: B.ByteString
+sessionChars = B.pack $ ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ "."
+
+trackSession :: (SessionId -> Snap a) -> Snap a
+trackSession act = do
+  let sessionCookieName = "doc-review-session"
+  cookies <- rqCookies <$> getRequest
+  sessionId <-
+      case [c | c <- cookies, cookieName c == sessionCookieName ] of
+        []    -> liftIO newSessionId
+        (c:_) -> return $ SessionId $ cookieValue c
+
+  res <- act sessionId
+
+  -- Expires in 1000000 seconds
+  expiry <- addUTCTime 1000000 <$> liftIO getCurrentTime
+
+  let newCookie =
+          Cookie { cookieName = sessionCookieName
+                 , cookieValue = let SessionId sid = sessionId
+                                 in sid
+                 , cookieExpires = Just expiry
+                 , cookieDomain = Nothing
+                 , cookiePath = Just "/"
+                 }
+
+  modifyResponse $ addCookie newCookie
+
+  return res
 
 --------------------------------------------------
 -- Handlers
@@ -117,15 +157,15 @@ countsJSON :: [(CommentId, Int)] -> JSON.JSValue
 countsJSON = JSON.showJSON . JSON.toJSObject .
              map (first (T.unpack . commentId))
 
-getCommentHandler :: State -> Snap ()
-getCommentHandler st = do
+getCommentHandler :: State -> SessionId -> Snap ()
+getCommentHandler st sessionId = do
   mcid <- mkCommentId <$> requireParam "id"
   case mcid of
     Nothing -> finishWith $ badRequest "Bad comment id"
-    Just cid -> respondComments cid st
+    Just cid -> respondComments cid st sessionId
 
-submitHandler :: State -> Snap ()
-submitHandler st = do
+submitHandler :: State -> SessionId -> Snap ()
+submitHandler st sessionId = do
   mcid <- mkCommentId <$> requireParam "id"
   case mcid of
     Nothing -> finishWith $ badRequest "Bad comment id"
@@ -134,18 +174,21 @@ submitHandler st = do
                               <*> requireParam "comment"
                               <*> getParamUtf8 "email"
                               <*> liftIO getPOSIXTime
+                              <*> return sessionId
            chap <- (mkChapterId =<<) <$> getParamUtf8 "chapid"
            liftIO $ addComment st cid chap comment
-           respondComments cid st
+           respondComments cid st sessionId
 
 --------------------------------------------------
 -- Snap helpers
 
-respondComments :: CommentId -> State -> Snap ()
-respondComments cid st = do
+respondComments :: CommentId -> State -> SessionId -> Snap ()
+respondComments cid st sessionId = do
   cs <- liftIO $ findComments st cid
+  si <- liftIO $ getLastInfo st sessionId
+  liftIO $ print (sessionId, si)
   modifyResponse $ addHeader "content-type" "text/html"
-  writeText $ render $ (getMarkup cid cs :: XHtml FlowContent)
+  writeText $ render $ (getMarkup cid cs si sessionId :: XHtml FlowContent)
 
 badRequest :: T.Text -> Response
 badRequest msg = setResponseBody (enumBS $ E.encodeUtf8 msg) $
@@ -165,8 +208,9 @@ getParamUtf8 argName = fmap E.decodeUtf8 <$> getParam (E.encodeUtf8 argName)
 --------------------------------------------------
 -- Rendering comments
 
-getMarkup :: Block a => CommentId -> [Comment] -> XHtml a
-getMarkup cId cs = do
+getMarkup :: Block a => CommentId -> [Comment] -> Maybe SessionInfo
+          -> SessionId -> XHtml a
+getMarkup cId cs si sid = do
   div' [ A.id_ $ T.concat ["toggle_", commentId cId], A.class_ "toggle" ] $
        a' [ A.class_ "commenttoggle"
           , A.attr "onclick" $
@@ -181,12 +225,12 @@ getMarkup cId cs = do
       div' [A.class_ "comment"] $
            text "Be the first to comment on this paragraph!"
       return ()
-    _   -> mapM_ (commentMarkup cId) cs
-  newCommentForm cId
+    _   -> mapM_ (commentMarkup sid cId) cs
+  newCommentForm cId si
   div_ $ span' [ A.class_ "comment_error" ] $ empty
 
-newCommentForm :: Block a => CommentId -> XHtml a
-newCommentForm cId =
+newCommentForm :: Block a => CommentId -> Maybe SessionInfo -> XHtml a
+newCommentForm cId msi =
     form' (addId "/comments/submit/") [ idAttr "form_"
                                       , A.class_ "comment"
                                       , A.method "post"
@@ -197,29 +241,41 @@ newCommentForm cId =
         td $ textarea' 10 40 [A.name "comment", idAttr "comment_"] ""
       tr $ do
         th $ label' [forAttr "name_"] $ text "Name:"
-        td $ input' [A.name "name", A.type_ "text", idAttr "name_"]
+        td $ input' [ A.name "name"
+                    , A.type_ "text"
+                    , idAttr "name_"
+                    , nameValue
+                    ]
       tr $ do
         th $ label' [forAttr "email_"] $ text "E-Mail Address: "
         td $ do
-             input' [A.name "email", A.type_ "text", idAttr "email_"]
+             input' [ A.name "email"
+                    , A.type_ "text"
+                    , idAttr "email_"
+                    , emailValue
+                    ]
              text " (optional, will not be displayed)"
       tr $ do
         td empty
         td $ input' [A.name "submit", A.type_ "submit"]
     where
+      nameValue = A.value $ maybe "" (escapeAttr . siName) msi
+      emailValue = A.value $ maybe "" escapeAttr $ siEmail =<< msi
       forAttr t = A.for (addId t)
       idAttr t = A.id_ (addId t)
       addId t = T.concat [t, commentId cId]
 
-commentMarkup :: Block a => CommentId -> Comment -> XHtml a
-commentMarkup _cId c =
-    div' [A.class_ "comment"] $ do
+commentMarkup :: Block a => SessionId -> CommentId -> Comment -> XHtml a
+commentMarkup sid _cId c =
+    div' [A.class_ topCls] $ do
       div' [A.class_ "username"] $
            do text $ escape $ cName c
               text " "
               span' [A.class_ "date"] $ text $ escape $ fmtTime $ cDate c
       div' [A.class_ "comment-text"] $ text $ escape $ cComment c
     where
+      topCls = T.unwords $ ["comment"] ++
+               (guard (sid == cSession c) >> return "mine")
       fmtTime = T.pack .
                 formatTime defaultTimeLocale "%Y-%m-%d %H:%M UTC" .
                 posixSecondsToUTCTime

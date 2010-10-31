@@ -7,6 +7,13 @@ div.comment {
     font-size: 80%;
     margin-left: 1em;
 }
+div.comment.mine {
+    border: 2px solid #eef;
+    background-color: #fff;
+}
+div.comment.mine .username {
+    font-style: bold;
+}
 form.comment {
     margin-left: 1em;
     font-size: 80%;

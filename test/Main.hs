@@ -5,7 +5,8 @@ where
 
 import State.Types ( State, ChapterId, mkChapterId, CommentId
                    , Comment, getCounts, findComments, mkCommentId
-                   , addChapter, Comment(..), addComment
+                   , addChapter, Comment(..), addComment, SessionId(..)
+                   , getLastInfo, SessionInfo(..)
                    )
 import qualified State.Mem
 import qualified State.Disk
@@ -23,6 +24,8 @@ import Control.Applicative ( (<$>), (<*>) )
 import Control.Exception ( finally )
 import System.IO ( stdout, hFlush )
 import qualified Data.Text as T
+import qualified Data.ByteString as B
+import qualified Data.Text.Encoding as E
 
 withTemporaryDirectory :: (FilePath -> IO a) -> IO a
 withTemporaryDirectory act = do
@@ -53,17 +56,20 @@ data Operation = GetCounts (Maybe ChapterId)
                | FindComments CommentId
                | AddChapter ChapterId [CommentId]
                | AddComment CommentId (Maybe ChapterId) Comment
+               | GetLastInfo SessionId
                  deriving Show
 
 data Result = Unit
+            | LastInfo (Maybe SessionInfo)
             | Counts [(CommentId, Int)]
             | Comments [Comment] deriving (Eq, Show)
 
 applyOp :: Operation -> State -> IO Result
-applyOp (GetCounts p) st = Counts . sort <$> getCounts st p
-applyOp (FindComments cId) st = Comments <$> findComments st cId
-applyOp (AddChapter chId cIds) st = addChapter st chId cIds >> return Unit
+applyOp (GetCounts p) st            = Counts . sort <$> getCounts st p
+applyOp (FindComments cId) st       = Comments <$> findComments st cId
+applyOp (AddChapter chId cIds) st   = addChapter st chId cIds >> return Unit
 applyOp (AddComment cId mChId c) st = addComment st cId mChId c >> return Unit
+applyOp (GetLastInfo sId) st        = LastInfo <$> getLastInfo st sId
 
 choice :: [a] -> IO a
 choice xs = (xs !!) <$> getRandomR (0, length xs - 1)
@@ -80,6 +86,7 @@ randomOp = join $ choice $
              <$> randomCommentId
              <*> maybeRand randomChapterId
              <*> randomComment
+           , GetLastInfo <$> randomSessionId
            ]
 
 maybeRand :: IO a -> IO (Maybe a)
@@ -93,10 +100,16 @@ randomChapterId = fromJust . mkChapterId <$> randomText
 randomCommentId :: IO CommentId
 randomCommentId = fromJust . mkCommentId <$> randomText
 
+randomSessionId :: IO SessionId
+randomSessionId = SessionId <$> randomBS
+
 usableChars :: UArray Int Char
 usableChars = listArray (0, length cs - 1) cs
     where
       cs = filter isPrint [chr 0..chr 127]
+
+randomBS :: IO B.ByteString
+randomBS = E.encodeUtf8 <$> randomText
 
 randomText :: IO T.Text
 randomText = join $ choice [commonValue, completelyRandom]
@@ -111,7 +124,7 @@ randomText = join $ choice [commonValue, completelyRandom]
 
 doRandomOperations :: (StoreType, State) -> (StoreType, State) -> IO ()
 doRandomOperations (ty1, st1) (ty2, st2) = do
-  n <- getRandomR (1, 200)
+  n <- getRandomR (10, 500)
   ops <- replicateM n randomOp
   _ <- foldM (\soFar op -> do
                 r1 <- applyOp op st1
@@ -132,7 +145,7 @@ doRandomOperations (ty1, st1) (ty2, st2) = do
   return ()
 
 randomComment :: IO Comment
-randomComment = Comment <$> randomText <*> randomText <*> maybeRand randomText <*> randomTime
+randomComment = Comment <$> randomText <*> randomText <*> maybeRand randomText <*> randomTime <*> randomSessionId
     where
       randomTime = realToFrac <$> (getRandomR (0, 2**32) :: IO Double)
 

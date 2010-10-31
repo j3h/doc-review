@@ -4,6 +4,7 @@ module State.SQLite
     )
 where
 
+import Data.Maybe ( listToMaybe )
 import Data.List ( intercalate )
 import System.IO ( hPutStrLn, stderr )
 import qualified Data.Text.Encoding as E
@@ -19,7 +20,8 @@ import Database.SQLite ( openConnection
 import Control.Exception ( onException )
 import qualified Database.SQLite as Q
 import State.Types         ( State(..), CommentId, commentId , ChapterId
-                           , chapterId, mkCommentId, Comment(..) )
+                           , chapterId, mkCommentId, Comment(..)
+                           , SessionId(..), SessionInfo(..) )
 import Control.Monad ( forM_, when )
 
 -- |Open a new SQLite comment store
@@ -31,29 +33,50 @@ new dbName = do
                  , getCounts    = getCounts' hdl
                  , addComment   = addComment' hdl
                  , addChapter   = addChapter' hdl
+                 , getLastInfo  = getLastInfo' hdl
                  }
+
+handleDefault :: b -> String -> Either String a -> (a -> IO b) -> IO b
+handleDefault d msg (Left err) _ = do
+  hPutStrLn stderr $ "Error " ++ msg ++ ": " ++ err
+  return d
+handleDefault _ _ (Right x) f = f x
+
+getLastInfo' :: SQLiteHandle -> SessionId -> IO (Maybe SessionInfo)
+getLastInfo' hdl sid = do
+  let sql = "SELECT name, email \
+            \FROM comments \
+            \WHERE session_id = :session_id \
+            \ORDER BY date DESC \
+            \LIMIT 1"
+      binder = [(":session_id", Q.Blob $ sidBS sid)]
+  res <- execParamStatement hdl sql binder
+  let toInfo [(_, Q.Blob n), (_, ef)] =
+          SessionInfo (E.decodeUtf8 n) `fmap` loadEmail ef
+      toInfo _ = []
+  handleDefault Nothing "loading info" res $
+                return . listToMaybe . concatMap toInfo . concat
+
+loadEmail :: Q.Value -> [Maybe T.Text]
+loadEmail Q.Null     = return Nothing
+loadEmail (Q.Blob s) = return $ Just $ E.decodeUtf8 s
+loadEmail _          = []
 
 -- Load all of the comments for a given comment id
 findComments' :: SQLiteHandle -> CommentId -> IO [Comment]
 findComments' hdl cId = do
   let commentIdBlob = txtBlob $ commentId cId
-      sql = "SELECT name, comment, email, date \
+      sql = "SELECT name, comment, email, date, session_id \
             \FROM comments WHERE comment_id = :comment_id"
       binder = [(":comment_id", commentIdBlob)]
   res <- execParamStatement hdl sql binder
-  let toComment [(_, Q.Blob n), (_, Q.Blob c), (_, ef), (_, Q.Double i)] =
-          do e <- case ef of
-                    Q.Null   -> return Nothing
-                    Q.Blob b -> return $ Just $ E.decodeUtf8 b
-                    _        -> []
+  let toComment [(_, Q.Blob n), (_, Q.Blob c), (_, ef), (_, Q.Double i), (_, Q.Blob sid)] =
+          do e <- loadEmail ef
              let d = realToFrac i
-             [Comment (E.decodeUtf8 n) (E.decodeUtf8 c) e d]
+             [Comment (E.decodeUtf8 n) (E.decodeUtf8 c) e d (SessionId sid)]
       toComment _ = []
-  case res of
-    Left err -> do
-             hPutStrLn stderr $ "Error loading comments: " ++ err
-             return []
-    Right rs -> return $ concatMap toComment $ concat rs
+  handleDefault [] "loading comments" res $
+                return . concatMap toComment . concat
 
 -- Load the comment counts for the current chapter, or all counts if
 -- no chapter is supplied
@@ -81,11 +104,8 @@ getCounts' hdl mChId = do
             Just cId | cnt > 0 -> [(cId, fromIntegral cnt)]
             _ -> []
       convertRow _ = []
-  case res of
-    Left err -> do
-             hPutStrLn stderr $ "Error getting counts: " ++ err
-             return []
-    Right rs -> return $ concatMap convertRow $ concat rs
+  handleDefault [] "getting counts" res $
+                return . concatMap convertRow . concat
 
 -- Add the comment, possibly associating it with a chapter
 addComment' :: SQLiteHandle -> CommentId -> Maybe ChapterId -> Comment -> IO ()
@@ -106,6 +126,7 @@ insertComment cId c hdl = do
              , ("comment", txtBlob $ cComment c)
              , ("email", maybe Q.Null txtBlob $ cEmail c)
              , ("date", Q.Double $ realToFrac $ cDate c)
+             , ("session_id", Q.Blob $ sidBS $ cSession c)
              ]
 
 -- Insert a row that maps a comment id with a chapter
@@ -142,6 +163,7 @@ checkSchema hdl = txn hdl $ mapM_ (defineTableOpt hdl True)
                           , tCol "comment"
                           , tColN "email" []
                           , Q.Column "date" real [notNull]
+                          , tCol "session_id"
                           ]
                   , t "chapters" [ tCol "chapter_id"
                                  , tCol "comment_id"

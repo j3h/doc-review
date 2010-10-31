@@ -5,13 +5,15 @@ where
 
 import Control.Applicative ( (<$>) )
 import Control.Arrow       ( second )
+import Control.Monad       ( when )
 import Data.Binary         ( encode, decode )
 import Data.Maybe          ( fromMaybe, mapMaybe )
 import System.Directory    ( getDirectoryContents, createDirectoryIfMissing )
 import System.FilePath     ( (</>) )
-import System.IO           ( withBinaryFile, IOMode(ReadMode) )
+import System.IO           ( withBinaryFile, IOMode(ReadMode, WriteMode) )
 import Data.Bits           ( (.&.), shiftR )
 import Data.Char           ( chr )
+import Data.Time.Clock.POSIX ( POSIXTime )
 import qualified Data.ByteString.Lazy as B
 import qualified Data.Text            as T
 import qualified Data.Text.IO         as T
@@ -22,12 +24,16 @@ import Data.List ( nub )
 import Numeric ( readHex )
 
 import State.Types         ( State(..), CommentId, commentId , ChapterId
-                           , chapterId, mkCommentId, Comment(..) )
+                           , chapterId, mkCommentId, Comment(..)
+                           , SessionId(..), SessionInfo(..) )
+
+safe :: T.Text -> FilePath
+safe = safeBS . E.encodeUtf8
 
 -- Encode arbitrary text as a filename that is safe to use on a POSIX
 -- filesystem (no special characters)
-safe :: T.Text -> FilePath
-safe = concatMap makeSafe . BS.unpack . E.encodeUtf8
+safeBS :: BS.ByteString -> FilePath
+safeBS = concatMap makeSafe . BS.unpack
     where
       -- Conservative set of characters that are allowed unescaped in
       -- a filename
@@ -63,6 +69,7 @@ new :: FilePath -> IO State
 new storeDir =
     do createDirectoryIfMissing True commentsDir
        createDirectoryIfMissing True chaptersDir
+       createDirectoryIfMissing True sessionsDir
        return $  State { findComments = findComments'
 
                        , getCounts =
@@ -80,8 +87,15 @@ new storeDir =
                              Just chap -> addChapter' chap [cId]
                            cs <- findComments' cId
                            writeCommentsFile cId (cs ++ [c])
+                           writeSession (cSession c) (cName c)
+                                            (cEmail c) (cDate c)
 
                        , addChapter = addChapter'
+
+
+                       , getLastInfo =
+                         \sId -> fmap (\(n, e, _) -> SessionInfo n e)
+                                 `fmap` readSession sId
                        }
     where
       commentsDir = storeDir </> "comments"
@@ -113,11 +127,38 @@ new storeDir =
         cIds' <- fromMaybe [] <$> readChapterFile chId
         writeChapterFile chId (nub $ cIds ++ cIds')
 
-      readChapterFile chId = tryRead `catch` \_ -> return Nothing
+      readChapterFile chId = (Just `fmap` tryRead) `catch` \_ -> return Nothing
           where
             tryRead = do
               content <- T.readFile $ chapterPath chId
-              return $ Just $ mapMaybe mkCommentId $ T.lines content
+              return $ mapMaybe mkCommentId $ T.lines content
 
       writeChapterFile chId =
           T.writeFile (chapterPath chId) . T.unlines . map commentId
+
+      sessionsDir = storeDir </> "sessions"
+
+      sessionPath sid = sessionsDir </> safeBS (sidBS sid)
+
+      writeSession sid n e d = do
+        exists <- readSession sid
+        let overwrite = case exists of
+                          Nothing -> True
+                          Just (_, _, d') -> d > d'
+        when overwrite $
+             withBinaryFile (sessionPath sid) WriteMode $ \h ->
+                 B.hPut h $ encode ( E.encodeUtf8 n
+                                   , fmap E.encodeUtf8 e
+                                   , realToFrac d :: Double
+                                   )
+
+      readSession :: SessionId -> IO (Maybe (T.Text, Maybe T.Text, POSIXTime))
+      readSession sid = (Just `fmap` readOK) `catch` \_ -> return Nothing
+          where
+            readOK =
+                withBinaryFile (sessionPath sid) ReadMode $ \h -> do
+                  (nBS, eBS, dD) <- decode <$> B.hGetContents h
+                  return ( E.decodeUtf8 nBS
+                         , fmap E.decodeUtf8 eBS
+                         , realToFrac (dD :: Double)
+                         )
