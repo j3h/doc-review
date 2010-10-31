@@ -19,6 +19,7 @@ import           System.Exit ( exitFailure, exitSuccess )
 import           System.FilePath ( (</>) )
 import           System.Locale ( defaultTimeLocale )
 import           Text.XHtmlCombinators
+import           Text.XHtmlCombinators.Escape ( escape )
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as E
 import qualified Text.JSON as JSON
@@ -214,10 +215,10 @@ commentMarkup :: Block a => CommentId -> Comment -> XHtml a
 commentMarkup _cId c =
     div' [A.class_ "comment"] $ do
       div' [A.class_ "username"] $
-           do text $ cName c
+           do text $ escape $ cName c
               text " "
-              span' [A.class_ "date"] $ text $ fmtTime $ cDate c
-      div' [A.class_ "comment-text"] $ text $ cComment c
+              span' [A.class_ "date"] $ text $ escape $ fmtTime $ cDate c
+      div' [A.class_ "comment-text"] $ text $ escape $ cComment c
     where
       fmtTime = T.pack .
                 formatTime defaultTimeLocale "%Y-%m-%d %H:%M UTC" .
