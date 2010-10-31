@@ -269,13 +269,15 @@ commentMarkup :: Block a => SessionId -> CommentId -> Comment -> XHtml a
 commentMarkup sid _cId c =
     div' [A.class_ topCls] $ do
       div' [A.class_ "username"] $
-           do text $ escape $ cName c
+           do text $ escape $ name
               text " "
               span' [A.class_ "date"] $ text $ escape $ fmtTime $ cDate c
       div' [A.class_ "comment-text"] $ text $ escape $ cComment c
     where
-      topCls = T.unwords $ ["comment"] ++
-               (guard (sid == cSession c) >> return "mine")
+      isMine = sid == cSession c
+      name | isMine = T.concat [ cName c, " (you)" ]
+           | otherwise = cName c
+      topCls = T.unwords $ ["comment"] ++ (guard isMine >> return "mine")
       fmtTime = T.pack .
                 formatTime defaultTimeLocale "%Y-%m-%d %H:%M UTC" .
                 posixSecondsToUTCTime

@@ -1,6 +1,6 @@
 div.toggle { display: inline; }
 div.comment {
-    border: 1px solid #33f;
+    border: 1px solid #eef;
     background-color: #eef;
     padding: 0.25em;
     margin-bottom: 0.25em;
@@ -8,8 +8,8 @@ div.comment {
     margin-left: 1em;
 }
 div.comment.mine {
-    border: 2px solid #eef;
-    background-color: #fff;
+    border: 2px solid #33f;
+    background-color: #eef;
 }
 div.comment.mine .username {
     font-style: bold;
@@ -20,6 +20,9 @@ form.comment {
 }
 div.username {
     margin-bottom: 0.5em;
+}
+.mine div.username {
+    font-weight: bold;
 }
 span.comment_error {
     color: red;
