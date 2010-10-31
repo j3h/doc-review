@@ -3,30 +3,57 @@ function qid(id) {
 }
 
 function beforeComment(formData, jqForm, options) {
-  var form = jqForm[0];
-  if (!form.comment.value) {
-    $(options.target + " span.comment_error").empty().append(
-      "<span class=\"comment_error\">Your comment is empty</span>");
-    return false;
-  }
-  if (!form.name.value) {
-    $(options.target + " span.comment_error").empty().append(
-      "<span class=\"comment_error\">Please provide a name</span>");
-    return false;
-  }
-  $(options.target + " span.comment_error").empty();
-  $(options.target + " span.comment_error").after(
-      "<img src=\"/support/icons/throbber.gif\" style=\"vertical-align: middle\"/>");
-  $(options.target + " input[@name=submit]").attr("disabled", true);
-  return true;
+    var form = jqForm[0];
+    clearStatus(options.target);
+    if (!form.comment.value) {
+        setError(options.target, "Your comment is empty");
+        return false;
+    }
+    if (!form.name.value) {
+        setError(options.target, "Please provide a name");
+        return false;
+    }
+    $(options.target + " span.comment_error").after(
+        "<img src=\"/support/icons/throbber.gif\" style=\"vertical-align: middle\"/>");
+    $(options.target + " input[@name=submit]").attr("disabled", true);
+    return true;
+}
+
+function clearStatus(target) {
+    $(target + " input[@name=submit]").attr("disabled", false);
+    $(target + " span.comment_error").empty().nextAll().remove();
+}
+
+function setError(target, errStr) {
+    $(target + " span.comment_error").append(errStr);
 }
 
 function ajaxifyForm(id) {
   var q = qid(id);
-  
-  $("#form_" + q).ajaxForm({ beforeSubmit: beforeComment,
-			     success: function() { ajaxifyForm(id); },
-			     target: "#comments_" + q });
+  var target = "#comments_" + q;
+  $("#form_" + q).ajaxForm({
+      beforeSubmit: beforeComment,
+
+      success: function() { ajaxifyForm(id); },
+
+      error: function (_req, typ, exc) {
+          clearStatus(target);
+          switch (typ) {
+          case 'error':
+              setError(target, "Server error. Try again soon.");
+              break;
+          case 'timeout':
+              setError(target, 'Request timed out. Try again in a few seconds.');
+              break;
+          default:
+              setError(target, 'An unknown error occurred.');
+              break;
+          }
+          return false;
+      },
+
+      target: target
+  });
 }
 
 function toggleComment(id) {
