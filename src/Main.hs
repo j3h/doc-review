@@ -1,41 +1,43 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
-import           Control.Applicative ( (<$>), (<*>), (<|>) )
-import           Control.Arrow ( first )
-import           Control.Monad ( replicateM, guard, unless, join )
-import           Control.Monad.IO.Class ( liftIO )
-import           Control.Monad.Random ( getRandomR )
-import           Data.Foldable ( mapM_, forM_ )
-import           Data.Time.Clock ( getCurrentTime, addUTCTime )
-import           Data.Time.Clock.POSIX ( getPOSIXTime
-                                       , posixSecondsToUTCTime )
-import           Data.Time.Format ( formatTime )
-import           Data.Maybe ( fromJust )
-import           Prelude hiding (mapM_)
-import           Network.URI ( URI, relativeTo, parseURI )
-import           Snap.Iteratee ( enumBS )
-import           Snap.Types ( dir )
-import           Snap.Types hiding (dir)
-import           Snap.Util.FileServe ( fileServe )
-import           System.Console.GetOpt ( usageInfo )
-import           System.Environment ( getArgs, getProgName )
-import           System.Exit ( exitFailure, exitSuccess )
-import           System.FilePath ( (</>) )
-import           System.Locale ( defaultTimeLocale )
+import           Control.Applicative          ( (<$>), (<*>), (<|>) )
+import           Control.Arrow                ( first )
+import           Control.Monad                ( replicateM, guard, unless
+                                              , join )
+import           Control.Monad.IO.Class       ( liftIO )
+import           Control.Monad.Random         ( getRandomR )
+import           Data.Foldable                ( mapM_, forM_ )
+import           Data.IORef                   ( newIORef, readIORef
+                                              , writeIORef )
+import           Data.Maybe                   ( fromJust )
+import           Data.Time.Clock              ( getCurrentTime, addUTCTime )
+import           Data.Time.Clock.POSIX        ( getPOSIXTime
+                                              , posixSecondsToUTCTime )
+import           Data.Time.Format             ( formatTime )
+import           Network.URI                  ( URI, relativeTo, parseURI )
+import           Prelude hiding               ( mapM_ )
+import           Snap.Iteratee                ( enumBS )
+import           Snap.Types                   ( dir )
+import           Snap.Util.FileServe          ( fileServe )
+import           System.Console.GetOpt        ( usageInfo )
+import           System.Environment           ( getArgs, getProgName )
+import           System.Exit                  ( exitFailure, exitSuccess )
+import           System.FilePath              ( (</>) )
+import           System.Locale                ( defaultTimeLocale )
+import           System.Posix.User            ( getUserEntryForName, setUserID
+                                              , userID, getRealUserID )
 import           Text.XHtmlCombinators
 import           Text.XHtmlCombinators.Escape ( escape, escapeAttr )
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as E
-import qualified Text.JSON as JSON
+import qualified Data.ByteString.Char8            as B
+import qualified Data.Text                        as T
+import qualified Data.Text.Encoding               as E
+import qualified Text.JSON                        as JSON
 import qualified Text.XHtmlCombinators.Attributes as A
-import qualified Data.ByteString.Char8 as B
-import           System.Posix.User ( getUserEntryForName, setUserID, userID
-                                   , getRealUserID )
-import           Data.IORef ( newIORef, readIORef, writeIORef )
 
-import           Config ( Config(..), ScanType(..), parseOptions, opts, Action(..) )
-import           Analyze ( analyzeDirectory )
+import           Config           ( Config(..), ScanType(..), parseOptions
+                                  , opts, Action(..) )
+import           Analyze          ( analyzeDirectory )
 import           Server
 import           State.Types
 import           Paths_doc_review ( getDataFileName )
@@ -127,7 +129,8 @@ tryDropPrivilege cfg = do
 
                  -- Anyone else:
                  _            ->
-                     error $ "Only root can change users (trying to run as " ++ username ++ ")"
+                     error $ "Only root can change users \
+                             \(trying to run as " ++ username ++ ")"
 
   case targetUID of
     Nothing     ->
