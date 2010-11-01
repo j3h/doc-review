@@ -14,7 +14,7 @@ div.comment.mine .username {
     font-style: bold;
 }
 div.comment-text {
-    white-space: pre;
+    white-space: pre-line;
 }
 form.comment {
     margin-left: 1em;
