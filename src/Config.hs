@@ -32,6 +32,7 @@ data Config =
     , cfgStaticDir   :: !(Maybe FilePath) -- ^Other static content to serve
     , cfgDefaultPage :: !(Maybe URI)
     -- ^Where to redirect to if no URL is requested
+    , cfgRunAs       :: !(Maybe String)
     }
 
 data Action = Help | Run Config
@@ -49,6 +50,7 @@ defaultConfig =
     , cfgStaticDir   = Nothing
     , cfgScanType    = ScanOnStartup
     , cfgDefaultPage = Nothing
+    , cfgRunAs       = Nothing
     }
 
 -- |When/whether to scan for new commentable paragraphs in the content
@@ -68,6 +70,7 @@ data Option = OStore String
             | OScan ScanType
             | ODefaultPage String
             | OHelp
+            | ORunAs String
               deriving Eq
 
 -- Error monad (like either)
@@ -110,6 +113,7 @@ applyOption (ODefaultPage str) =
       Nothing -> fail $ "Not a valid URI: " ++ show str
       Just u  -> return $ \cfg ->
                  cfg { cfgDefaultPage = Just u }
+applyOption (ORunAs str) = return $ \cfg -> cfg { cfgRunAs = Just str }
 applyOption OHelp = return id
 
 -- |Parse command-line arguments
@@ -149,4 +153,7 @@ opts = [ Option "s" ["store"] (ReqArg OStore "STORE")
          "Where the server should redirect when the URL / is requested"
        , Option "" ["help"] (NoArg OHelp)
          "Get usage"
+       , Option "" ["run-as"] (ReqArg ORunAs "USERNAME")
+         "If started as root, attempt to drop privileges by \n\
+         \changing to this user once the port is bound"
        ]
