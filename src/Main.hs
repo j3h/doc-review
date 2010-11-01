@@ -11,7 +11,9 @@ import           Data.Time.Clock ( getCurrentTime, addUTCTime )
 import           Data.Time.Clock.POSIX ( getPOSIXTime
                                        , posixSecondsToUTCTime )
 import           Data.Time.Format ( formatTime )
+import           Data.Maybe ( fromJust )
 import           Prelude hiding (catch, mapM_)
+import           Network.URI ( URI, relativeTo, parseURI )
 import           Snap.Iteratee ( enumBS )
 import           Snap.Types ( dir )
 import           Snap.Types hiding (dir)
@@ -105,7 +107,34 @@ app static cfg st sessionId =
                    ]) <|>
     fileServe (cfgContentDir cfg) <|>
     fileServe static <|>
-    maybe pass (ifTop . redirect) (cfgDefaultPage cfg)
+    maybe pass (ifTop . relativeRedirect) (cfgDefaultPage cfg)
+
+-- |Redirect to the supplied URI (relative to the current request's
+-- URI)
+relativeRedirect :: URI -> Snap ()
+relativeRedirect d =
+    withRequest $ \req -> do
+      let host = B.unpack $ rqServerName req
+
+          rport = rqServerPort req
+
+          defaultPort | rqIsSecure req = 443
+                      | otherwise      = 80
+
+          proto | rqIsSecure req = "https"
+                | otherwise = "http"
+
+          authStr | rport == defaultPort || rport == 0 = host
+                  | otherwise = host ++ ':':show rport
+
+      case parseURI $ proto ++ "://" ++ authStr of
+
+        Nothing -> finishWith $ badRequest $
+                   T.concat ["Bad host header: ", T.pack host]
+
+        Just u  ->
+            -- relativeTo's implementation always returns Just
+            redirect $ B.pack $ show $ fromJust $ d `relativeTo` u
 
 newSessionId :: IO SessionId
 newSessionId = SessionId . B.pack <$> replicateM 24 selectRandomSessionChar

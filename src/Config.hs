@@ -8,11 +8,8 @@ module Config
     )
 where
 
-import Network.URI ( parseURI )
+import Network.URI ( parseRelativeReference, URI )
 import System.Console.GetOpt
-import qualified Data.ByteString as B
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as E
 
 import State.Types ( State )
 import qualified State.Mem ( new )
@@ -33,7 +30,7 @@ data Config =
     , cfgScanType    :: !ScanType   -- ^Whether to scan for updated
                                     -- ids in the content directory
     , cfgStaticDir   :: !(Maybe FilePath) -- ^Other static content to serve
-    , cfgDefaultPage :: !(Maybe B.ByteString)
+    , cfgDefaultPage :: !(Maybe URI)
     -- ^Where to redirect to if no URL is requested
     }
 
@@ -109,10 +106,10 @@ applyOption (OStaticDir str) = return $
                                \cfg -> cfg { cfgStaticDir = Just str }
 applyOption (OScan st) = return $ \cfg -> cfg { cfgScanType = st }
 applyOption (ODefaultPage str) =
-    case parseURI str of
+    case parseRelativeReference str of
       Nothing -> fail $ "Not a valid URI: " ++ show str
-      Just _  -> return $ \cfg ->
-                 cfg { cfgDefaultPage = Just $ E.encodeUtf8 $ T.pack str }
+      Just u  -> return $ \cfg ->
+                 cfg { cfgDefaultPage = Just u }
 applyOption OHelp = return id
 
 -- |Parse command-line arguments
