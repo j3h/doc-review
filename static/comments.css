@@ -4,7 +4,6 @@ div.comment {
     background-color: #eef;
     padding: 0.25em;
     margin-bottom: 0.25em;
-    font-size: 80%;
     margin-left: 1em;
 }
 div.comment.mine {
@@ -14,9 +13,11 @@ div.comment.mine {
 div.comment.mine .username {
     font-style: bold;
 }
+div.comment-text {
+    white-space: pre;
+}
 form.comment {
     margin-left: 1em;
-    font-size: 80%;
 }
 div.username {
     margin-bottom: 0.5em;
