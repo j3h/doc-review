@@ -186,7 +186,6 @@ respondComments :: CommentId -> State -> SessionId -> Snap ()
 respondComments cid st sessionId = do
   cs <- liftIO $ findComments st cid
   si <- liftIO $ getLastInfo st sessionId
-  liftIO $ print (sessionId, si)
   modifyResponse $ addHeader "content-type" "text/html"
   writeText $ render $ (getMarkup cid cs si sessionId :: XHtml FlowContent)
 
