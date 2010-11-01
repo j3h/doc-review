@@ -159,8 +159,18 @@ doRandomOperations (ty1, st1) (ty2, st2) = do
   return ()
 
 randomComment :: IO Comment
-randomComment = Comment <$> randomText <*> randomText <*> maybeRand randomText <*> randomTime <*> randomSessionId
+randomComment = Comment
+                <$> randomText
+                <*> randomText
+                <*> maybeRand randomText
+                <*> randomTime
+                <*> randomSessionId
     where
+      -- This one's a little sketchy, because we expect that the time
+      -- of each comment will be monotonically non-decreasing. The
+      -- stores should act sanely in the face of arbitrary time
+      -- values, however, so I'll leave it as a completely random
+      -- value.
       randomTime = realToFrac <$> (getRandomR (0, 2**32) :: IO Double)
 
 -- |Test that adding a comment to a node makes it show up at the end
