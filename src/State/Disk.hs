@@ -1,3 +1,7 @@
+{- WARNING: this store implementation has race-conditions for
+   multi-threaded access! Its operations are also not atomic. Beware!
+ -}
+
 module State.Disk
     ( new
     )

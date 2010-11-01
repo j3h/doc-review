@@ -37,7 +37,7 @@ withTemporaryDirectory act = do
   createDirectory d
   act d `finally` removeDirectoryRecursive d
 
-data StoreType = Disk | SQLite | Mem deriving (Show, Eq)
+data StoreType = Disk | SQLite | Mem deriving (Show, Eq, Enum, Bounded)
 
 mkStore :: FilePath -> StoreType -> IO State
 mkStore d t = case t of
@@ -49,7 +49,7 @@ withRandomStores :: ((StoreType, State) -> (StoreType, State) -> IO a) -> IO a
 withRandomStores act = do
   elim <- getRandomR (0, 2)
   let (before, (_:after)) = splitAt elim [Disk, SQLite, Mem]
-      ts@[t1, t2] = before ++ after
+      ts = before ++ after
   withTemporaryDirectory $ \d ->
       do [st1, st2] <- zip ts <$> mapM (mkStore d) ts
          act st1 st2
@@ -77,10 +77,19 @@ choice :: [a] -> IO a
 choice xs = (xs !!) <$> getRandomR (0, length xs - 1)
 
 randomOp :: IO Operation
-randomOp = join $ choice $
-           [ GetCounts <$> maybeRand randomChapterId
-           , FindComments <$> randomCommentId
-           , let cIds = do
+randomOp = join $ choice $ readOps ++ writeOps
+
+randomWriteOp :: IO Operation
+randomWriteOp = join $ choice writeOps
+
+readOps :: [IO Operation]
+readOps = [ GetCounts <$> maybeRand randomChapterId
+          , FindComments <$> randomCommentId
+          , GetLastInfo <$> randomSessionId
+          ]
+
+writeOps :: [IO Operation]
+writeOps = [ let cIds = do
                    n <- getRandomR (0, 100)
                    replicateM n $ randomCommentId
              in AddChapter <$> randomChapterId <*> cIds
@@ -88,7 +97,6 @@ randomOp = join $ choice $
              <$> randomCommentId
              <*> maybeRand randomChapterId
              <*> randomComment
-           , GetLastInfo <$> randomSessionId
            ]
 
 maybeRand :: IO a -> IO (Maybe a)
@@ -124,10 +132,14 @@ randomText = join $ choice [commonValue, completelyRandom]
         T.pack <$> replicateM n randomChar
       commonValue = choice ["alpha", "beta", "gamma", "delta"]
 
+randomOps :: Int -> Int -> IO [Operation]
+randomOps minOps maxOps = do
+  n <- getRandomR (minOps, maxOps)
+  replicateM n randomOp
+
 doRandomOperations :: (StoreType, State) -> (StoreType, State) -> IO ()
 doRandomOperations (ty1, st1) (ty2, st2) = do
-  n <- getRandomR (10, 500)
-  ops <- replicateM n randomOp
+  ops <- randomOps 10 500
   _ <- foldM (\soFar op -> do
                 r1 <- applyOp op st1
                 r2 <- applyOp op st2
@@ -151,6 +163,8 @@ randomComment = Comment <$> randomText <*> randomText <*> maybeRand randomText <
     where
       randomTime = realToFrac <$> (getRandomR (0, 2**32) :: IO Double)
 
+-- |Test that adding a comment to a node makes it show up at the end
+-- of the list of comments when it is subsequently loaded
 storeLoadComment :: State -> IO ()
 storeLoadComment st = do
   cId <- randomCommentId
@@ -161,12 +175,43 @@ storeLoadComment st = do
   unless (cs' == (cs ++ [c])) $
          error "Expected the added comment to come up after adding"
 
+runSomeTests :: State -> IO ()
+runSomeTests st = do
+  storeLoadComment st
+
 main :: IO ()
 main = do
-  putStrLn "Running randomized store tests"
+  putStr "Testing store properties: "
+  hFlush stdout
+
+  -- Test properties of stores
+  withTemporaryDirectory $ \d ->
+      forM_ [minBound .. maxBound] $ \typ -> do
+         putStr $ show typ ++ " "
+         hFlush stdout
+
+         st <- mkStore d typ
+
+         -- Run some tests on an empty store
+         runSomeTests st
+
+         replicateM 10 $ do
+           -- Do some random operations to get the store into a
+           -- different state
+           n <- getRandomR (10, 500)
+           ops <- replicateM n randomWriteOp
+           forM_ ops $ \op -> applyOp op st
+
+           -- Make sure the tests still pass in this new state
+           runSomeTests st
+
+  putStrLn "done.\nRunning store consistency tests"
+  -- Test that completely randomized operations have the same
+  -- observable state between different store types
   replicateM_ 100 $ do
          withRandomStores doRandomOperations
          putStr "."
          hFlush stdout
+
   putStrLn "\ndone. Tests passed."
 
