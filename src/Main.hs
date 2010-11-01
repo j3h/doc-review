@@ -3,13 +3,10 @@ module Main where
 
 import           Control.Applicative          ( (<$>), (<*>), (<|>) )
 import           Control.Arrow                ( first )
-import           Control.Monad                ( replicateM, guard, unless
-                                              , join )
+import           Control.Monad                ( replicateM, guard )
 import           Control.Monad.IO.Class       ( liftIO )
 import           Control.Monad.Random         ( getRandomR )
 import           Data.Foldable                ( mapM_, forM_ )
-import           Data.IORef                   ( newIORef, readIORef
-                                              , writeIORef )
 import           Data.Maybe                   ( fromJust )
 import           Data.Time.Clock              ( getCurrentTime, addUTCTime )
 import           Data.Time.Clock.POSIX        ( getPOSIXTime
@@ -18,15 +15,13 @@ import           Data.Time.Format             ( formatTime )
 import           Network.URI                  ( URI, relativeTo, parseURI )
 import           Prelude hiding               ( mapM_ )
 import           Snap.Iteratee                ( enumBS )
-import           Snap.Types                   ( dir )
+import           Snap.Types
 import           Snap.Util.FileServe          ( fileServe )
 import           System.Console.GetOpt        ( usageInfo )
 import           System.Environment           ( getArgs, getProgName )
 import           System.Exit                  ( exitFailure, exitSuccess )
 import           System.FilePath              ( (</>) )
 import           System.Locale                ( defaultTimeLocale )
-import           System.Posix.User            ( getUserEntryForName, setUserID
-                                              , userID, getRealUserID )
 import           Text.XHtmlCombinators
 import           Text.XHtmlCombinators.Escape ( escape, escapeAttr )
 import qualified Data.ByteString.Char8            as B
@@ -38,6 +33,7 @@ import qualified Text.XHtmlCombinators.Attributes as A
 import           Config           ( Config(..), ScanType(..), parseOptions
                                   , opts, Action(..) )
 import           Analyze          ( analyzeDirectory )
+import           Privilege        ( tryDropPrivilege )
 import           Server
 import           State.Types
 import           Paths_doc_review ( getDataFileName )
@@ -98,77 +94,9 @@ runServer cfg st = do
              , port = cfgPort cfg
              }
 
-  dropPriv <- tryDropPrivilege cfg
-  server sCfg $ dropPriv <|> trackSession (app static cfg st)
-
--- Obtain an action that will attempt to drop privileges if the
--- environment and configuration allow it. Ideally, we would be able
--- to drop privileges after binding to the port and before doing
--- anything else. This is a compromise that provides a modicum of
--- safety if the request can co-opt the server, but no protection from
--- any local attacks. In particular, all of the server start-up stuff
--- happened before this, including creating the database. This could
--- potentially cause permission errors.
-tryDropPrivilege :: Config -> IO (Snap ())
-tryDropPrivilege cfg = do
-  -- Figure out what user id we need to switch to (if any)
-  uid <- getRealUserID
-  targetUID <-
-      case cfgRunAs cfg of
-        Nothing -> return Nothing
-        Just username ->
-            do t <- userID <$> getUserEntryForName username
-               case uid of
-                 -- Root:
-                 0            ->
-                     return $ Just t
-
-                 -- We already are the target user:
-                 _ | t == uid ->
-                     return Nothing
-
-                 -- Anyone else:
-                 _            ->
-                     error $ "Only root can change users \
-                             \(trying to run as " ++ username ++ ")"
-
-  case targetUID of
-    Nothing     ->
-        -- If we have no target UID, then just return a no-op
-        return $ pass
-
-    Just target ->
-        -- Build and return an action that will ensure that we are
-        -- running as the target user before proceeding
-        do
-          -- The variable that holds the action that ensures that we
-          -- have dropped privileges
-          startRef <- newIORef $ return ()
-
-          -- Put the privilege dropping action in
-          writeIORef startRef $
-            do putStrLn $ "Dropping privileges: switching to user " ++ show target
-
-               setUserID target `catch` \e ->
-                   -- Check that we didn't lose a race
-                   -- trying to drop privileges. If we lost,
-                   -- then everything's OK because the
-                   -- privileges are already dropped.
-                   do newUID <- getRealUserID
-
-                      -- If it wasn't losing the race,
-                      -- raise it again here
-                      unless (newUID == target) $ ioError e
-
-               finalUID <- getRealUserID
-               if finalUID == target
-                 -- replace the action with a no-op
-                 then writeIORef startRef $ return ()
-                 else error "Failed to drop privileges"
-
-          return $ do liftIO $ join $ readIORef startRef
-                      -- Go on to the next handler
-                      pass
+  dropPriv <- maybe (return (return ())) tryDropPrivilege $ cfgRunAs cfg
+  let dropPrivAct = liftIO dropPriv >> pass
+  server sCfg $ dropPrivAct <|> trackSession (app static cfg st)
 
 scanDir :: Config -> State -> IO ()
 scanDir = loadChapters . cfgContentDir

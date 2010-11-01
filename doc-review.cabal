@@ -29,6 +29,7 @@ Executable doc-review
   other-modules:
     Analyze,
     Config,
+    Privilege,
     Server,
     State.Disk,
     State.Mem,
