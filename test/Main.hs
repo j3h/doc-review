@@ -39,15 +39,17 @@ withTemporaryDirectory act = do
 
 data StoreType = Disk | SQLite | Mem deriving (Show, Eq)
 
+mkStore :: FilePath -> StoreType -> IO State
+mkStore d t = case t of
+                Mem    -> State.Mem.new
+                Disk   -> State.Disk.new (d </> "flat-file")
+                SQLite -> State.SQLite.new (d </> "state.db")
+
 withRandomStores :: ((StoreType, State) -> (StoreType, State) -> IO a) -> IO a
 withRandomStores act = do
   elim <- getRandomR (0, 2)
   let (before, (_:after)) = splitAt elim [Disk, SQLite, Mem]
       ts@[t1, t2] = before ++ after
-      mkStore d t = case t of
-                      Mem    -> State.Mem.new
-                      Disk   -> State.Disk.new (d </> "flat-file")
-                      SQLite -> State.SQLite.new (d </> "state.db")
   withTemporaryDirectory $ \d ->
       do [st1, st2] <- zip ts <$> mapM (mkStore d) ts
          act st1 st2
@@ -148,6 +150,16 @@ randomComment :: IO Comment
 randomComment = Comment <$> randomText <*> randomText <*> maybeRand randomText <*> randomTime <*> randomSessionId
     where
       randomTime = realToFrac <$> (getRandomR (0, 2**32) :: IO Double)
+
+storeLoadComment :: State -> IO ()
+storeLoadComment st = do
+  cId <- randomCommentId
+  cs <- findComments st cId
+  c <- randomComment
+  addComment st cId Nothing c
+  cs' <- findComments st cId
+  unless (cs' == (cs ++ [c])) $
+         error "Expected the added comment to come up after adding"
 
 main :: IO ()
 main = do
