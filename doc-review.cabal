@@ -1,10 +1,16 @@
 Name:                doc-review
 Version:             0.4
-Synopsis:            Project Synopsis Here
-Description:         Project Description Here
-License:             AllRightsReserved
-Author:              Author
-Maintainer:          maintainer@example.com
+Synopsis:            Document review Web application, like http://book.realworldhaskell.org/
+
+Description: A standalone Web application that provides for
+             paragraph-by-paragraph commentary by document reviewers,
+             based on the user interface from
+             <http://book.realworldhaskell.org/>. It works on any Web
+             page with just a little bit of Javascript added that
+             makes it load the comment Web UI.
+
+Author:              Josh Hoyt
+Maintainer:          josh.hoyt@galois.com
 Stability:           Experimental
 Category:            Web
 Build-type:          Simple
@@ -18,7 +24,7 @@ data-files:
       static/support/icons/*.gif
 
 Flag test
-  Description: Build the test executable
+  Description: Build the test executable (tests the store implementations)
   Manual: True
   Default: False
 

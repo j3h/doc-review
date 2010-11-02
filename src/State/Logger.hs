@@ -64,8 +64,7 @@ replay st =
       AddChapter chId cs     -> addChapter st chId cs
 
 -- |Wrap a store so that all of its modifying operations are logged to
--- a file, so that the data could be restored from
--- the log
+-- a file. The file can later be replayed to restore the state.
 wrap :: FilePath -> State -> IO State
 wrap logFileName st = do
   ref <- newMVar Nothing
@@ -100,6 +99,8 @@ rotateLog v = forever $ do
 putErr :: String -> IOError -> IO ()
 putErr msg e = hPutStrLn stderr $ msg ++ ": " ++ show e
 
+-- |Write a log entry to a file, opening the file for append if
+-- necessary
 writeLog :: FilePath -> MVar (Maybe Handle) -> Action -> IO ()
 writeLog fn v act =
     modifyMVar v $ \mh -> do
