@@ -8,6 +8,7 @@ module State.Logger
     , foldLogFile
     , foldLogFile_
     , foldComments
+    , foldMapComments
     )
 where
 
@@ -21,6 +22,7 @@ import Data.Binary ( Binary(..), getWord8, putWord8, encode )
 import Control.Applicative ( (<$>), (<*>) )
 import Control.Concurrent.MVar ( MVar, newMVar, modifyMVar )
 import Control.Concurrent ( forkIO, threadDelay )
+import Data.Monoid ( mempty, mappend, Monoid )
 
 import State.Types
 
@@ -78,6 +80,11 @@ foldComments f =
       AddChapter _ _         -> return
       AddComment cId mChId c -> \x -> let x' = f cId mChId c x
                                       in  x' `seq` return x'
+
+foldMapComments :: Monoid b => (CommentId -> Maybe ChapterId -> Comment -> b)
+                -> FilePath -> IO b
+foldMapComments f =
+    foldComments (\cId mChId c -> (f cId mChId c `mappend`)) mempty
 
 -- |Wrap a store so that all of its modifying operations are logged to
 -- a file. The file can later be replayed to restore the state.
