@@ -36,6 +36,7 @@ import           Analyze          ( analyzeDirectory )
 import           Privilege        ( tryDropPrivilege )
 import           Server
 import           State.Types
+import qualified State.Logger as L
 import           Paths_doc_review ( getDataFileName )
 
 usage :: IO String
@@ -63,7 +64,7 @@ main = do
           exitSuccess
         Right (Run c) -> return c
 
-  st <- cfgStore cfg
+  st <- L.wrap "store.log" =<< cfgStore cfg
 
   let sc = scanDir cfg st
       run = runServer cfg st
