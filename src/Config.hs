@@ -33,6 +33,7 @@ data Config =
     , cfgDefaultPage :: !(Maybe URI)
     -- ^Where to redirect to if no URL is requested
     , cfgRunAs       :: !(Maybe String)
+    , cfgLogTo       :: !(Maybe FilePath)
     }
 
 data Action = Help | Run Config
@@ -51,6 +52,7 @@ defaultConfig =
     , cfgScanType    = ScanOnStartup
     , cfgDefaultPage = Nothing
     , cfgRunAs       = Nothing
+    , cfgLogTo       = Nothing
     }
 
 -- |When/whether to scan for new commentable paragraphs in the content
@@ -71,6 +73,7 @@ data Option = OStore String
             | ODefaultPage String
             | OHelp
             | ORunAs String
+            | OLogTo FilePath
               deriving Eq
 
 -- Error monad (like either)
@@ -115,6 +118,7 @@ applyOption (ODefaultPage str) =
                  cfg { cfgDefaultPage = Just u }
 applyOption (ORunAs str) = return $ \cfg -> cfg { cfgRunAs = Just str }
 applyOption OHelp = return id
+applyOption (OLogTo str) = return $ \cfg -> cfg { cfgLogTo = Just str }
 
 -- |Parse command-line arguments
 parseOptions :: [String] -> Either [String] Action
@@ -156,4 +160,7 @@ opts = [ Option "s" ["store"] (ReqArg OStore "STORE")
        , Option "" ["run-as"] (ReqArg ORunAs "USERNAME")
          "If started as root, attempt to drop privileges by \n\
          \changing to this user once the port is bound"
+       , Option "" ["log-to"] (ReqArg OLogTo "LOGFILE")
+         "Write a binary log file as a backup in case of primary\n\
+         \store failure"
        ]

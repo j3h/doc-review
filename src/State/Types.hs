@@ -24,7 +24,14 @@ import Data.Time.Clock.POSIX ( POSIXTime )
 import qualified Data.ByteString as B
 
 newtype CommentId = CommentId { commentId :: T.Text } deriving (Ord, Eq, Show)
+instance Binary CommentId where
+    get = CommentId . E.decodeUtf8 <$> get
+    put = put . E.encodeUtf8 . commentId
+
 newtype ChapterId = ChapterId { chapterId :: T.Text } deriving (Ord, Eq, Show)
+instance Binary ChapterId where
+    get = ChapterId . E.decodeUtf8 <$> get
+    put = put . E.encodeUtf8 . chapterId
 
 data SessionInfo = SessionInfo { siName :: !T.Text
                                , siEmail :: !(Maybe T.Text)

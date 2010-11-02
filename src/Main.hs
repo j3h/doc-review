@@ -64,7 +64,7 @@ main = do
           exitSuccess
         Right (Run c) -> return c
 
-  st <- L.wrap "store.log" =<< cfgStore cfg
+  st <- maybe return L.wrap (cfgLogTo cfg) =<< cfgStore cfg
 
   let sc = scanDir cfg st
       run = runServer cfg st
