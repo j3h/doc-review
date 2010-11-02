@@ -38,6 +38,7 @@ Executable doc-review
     Privilege,
     Server,
     State.Disk,
+    State.Logger,
     State.Mem,
     State.SQLite,
     State.Types
