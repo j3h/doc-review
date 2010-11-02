@@ -89,7 +89,7 @@ rotateLog v = forever $ do
                           return (Nothing, ())
 
                 -- reopen the log file every five minutes
-                threadDelay $ 1000000 -- * 600
+                threadDelay $ 1000000 * 600
 
     where
       closeLog h = hClose h `catch` putErr "Failed to close log handle"
