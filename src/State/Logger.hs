@@ -5,6 +5,9 @@
 module State.Logger
     ( wrap
     , replay
+    , foldLogFile
+    , foldLogFile_
+    , foldComments
     )
 where
 
@@ -44,24 +47,37 @@ instance Binary Action where
            put cs
 
 -- Attempt to replay a log file, skipping corrupted sections of the file
-replayGeneric :: Binary act => (act -> IO ()) -> FilePath -> IO ()
-replayGeneric playOne logFileName =
-    withBinaryFile logFileName ReadMode $ go <=< B.hGetContents
+foldLogFile :: Binary act => (act -> a -> IO a) -> a -> FilePath -> IO a
+foldLogFile playOne initial logFileName =
+    withBinaryFile logFileName ReadMode $ go initial <=< B.hGetContents
     where
-      go bs | B.null bs = return ()
-      go bs = go =<< (step bs `catch` \_ -> return (B.drop 1 bs))
+      go x bs | B.null bs = return x
+      go x bs = uncurry go =<< (step x bs `catch` \_ -> return (x, B.drop 1 bs))
 
-      step bs = do
+      step x bs = do
         let (act, bs', _) = runGetState get bs 0
-        playOne act
-        return bs'
+        x' <- playOne act x
+        return (x', bs')
+
+foldLogFile_ :: Binary act => (act -> IO ()) -> FilePath -> IO ()
+foldLogFile_ f = foldLogFile (const . f) ()
 
 replay :: State -> FilePath -> IO ()
 replay st =
-    replayGeneric $ \act ->
+    foldLogFile_ $ \act ->
     case act of
       AddComment cId mChId c -> addComment st cId mChId c
       AddChapter chId cs     -> addChapter st chId cs
+
+-- | Strict fold over the comments in the log file
+foldComments :: (CommentId -> Maybe ChapterId -> Comment -> b -> b) -> b
+             -> FilePath -> IO b
+foldComments f =
+    foldLogFile $ \act ->
+    case act of
+      AddChapter _ _         -> return
+      AddComment cId mChId c -> \x -> let x' = f cId mChId c x
+                                      in  x' `seq` return x'
 
 -- |Wrap a store so that all of its modifying operations are logged to
 -- a file. The file can later be replayed to restore the state.
