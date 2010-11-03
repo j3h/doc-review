@@ -4,13 +4,15 @@ module Main
 where
 
 import Control.Applicative ( (<$>) )
-import Control.Monad ( foldM, forM_ )
-import Data.Monoid ( Monoid(..) )
-import System.Environment ( getArgs )
+import Control.Monad       ( foldM, forM_, (>=>) )
+import Data.Monoid         ( Monoid(..) )
+import System.Environment  ( getArgs )
+import System.IO           ( IOMode(ReadMode), withBinaryFile )
+import qualified Data.ByteString.Lazy as B
+import qualified Data.Map as Map
+import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
-import qualified Data.Set as Set
-import qualified Data.Map as Map
 
 import State.Logger ( foldMapComments )
 import State.Types
@@ -38,7 +40,11 @@ stats cid _ c = CommentStats
                 (maybe Set.empty Set.singleton $ cEmail c)
 
 getStats :: FilePath -> IO CommentStats
-getStats = foldMapComments stats
+getStats = withContents $ foldMapComments stats
+
+
+withContents :: (B.ByteString -> IO a) -> FilePath -> IO a
+withContents f fn = withBinaryFile fn ReadMode $ B.hGetContents >=> f
 
 main :: IO ()
 main = do
