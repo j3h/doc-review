@@ -1,6 +1,6 @@
 {-|
-  Module that logs all state actions to a file so that they could
-  theoretically be reconstructed.
+  Module that logs all state modifying actions to a file so that they
+  can be reprocessed.
  -}
 module State.Logger
     ( wrap
@@ -12,10 +12,10 @@ module State.Logger
     )
 where
 
-import Control.Monad ( (<=<), forever )
+import Control.Monad ( forever )
 import System.IO.Error ( try )
-import System.IO ( stderr, openBinaryFile, hPutStrLn, hClose
-                 , IOMode(AppendMode, ReadMode), Handle, withBinaryFile )
+import System.IO ( stderr, openBinaryFile, hPutStrLn, hClose, hFlush
+                 , IOMode(AppendMode), Handle )
 import Data.ByteString.Lazy as B
 import Data.Binary.Get ( runGetState )
 import Data.Binary ( Binary(..), getWord8, putWord8, encode )
@@ -49,22 +49,21 @@ instance Binary Action where
            put cs
 
 -- Attempt to replay a log file, skipping corrupted sections of the file
-foldLogFile :: Binary act => (act -> a -> IO a) -> a -> FilePath -> IO a
-foldLogFile playOne initial logFileName =
-    withBinaryFile logFileName ReadMode $ go initial <=< B.hGetContents
+foldLogFile :: Binary act => (act -> a -> IO a) -> a -> B.ByteString -> IO a
+foldLogFile processAction initial = go initial
     where
       go x bs | B.null bs = return x
       go x bs = uncurry go =<< (step x bs `catch` \_ -> return (x, B.drop 1 bs))
 
       step x bs = do
         let (act, bs', _) = runGetState get bs 0
-        x' <- playOne act x
+        x' <- processAction act x
         return (x', bs')
 
-foldLogFile_ :: Binary act => (act -> IO ()) -> FilePath -> IO ()
+foldLogFile_ :: Binary act => (act -> IO ()) -> B.ByteString -> IO ()
 foldLogFile_ f = foldLogFile (const . f) ()
 
-replay :: State -> FilePath -> IO ()
+replay :: State -> B.ByteString -> IO ()
 replay st =
     foldLogFile_ $ \act ->
     case act of
@@ -73,7 +72,7 @@ replay st =
 
 -- | Strict fold over the comments in the log file
 foldComments :: (CommentId -> Maybe ChapterId -> Comment -> b -> b) -> b
-             -> FilePath -> IO b
+             -> B.ByteString -> IO b
 foldComments f =
     foldLogFile $ \act ->
     case act of
@@ -82,7 +81,7 @@ foldComments f =
                                       in  x' `seq` return x'
 
 foldMapComments :: Monoid b => (CommentId -> Maybe ChapterId -> Comment -> b)
-                -> FilePath -> IO b
+                -> B.ByteString -> IO b
 foldMapComments f =
     foldComments (\cId mChId c -> (f cId mChId c `mappend`)) mempty
 
@@ -145,7 +144,9 @@ writeLog fn v act =
       -- the data
       writeEntry Nothing  = return Nothing
       writeEntry (Just h) = do
-        res <- try $ B.hPut h (encode act)
+        res <- try $ do
+                 B.hPut h (encode act)
+                 hFlush h
         case res of
           Right () -> return $ Just h
           Left e   -> do putErr "Failed to write log entry" e
