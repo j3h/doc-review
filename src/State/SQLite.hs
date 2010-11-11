@@ -4,7 +4,7 @@ module State.SQLite
     )
 where
 
-import Data.Maybe ( listToMaybe )
+import Data.Maybe ( listToMaybe, maybeToList )
 import Data.List ( intercalate )
 import System.IO ( hPutStrLn, stderr )
 import qualified Data.Text.Encoding as E
@@ -34,6 +34,7 @@ new dbName = do
                  , addComment   = addComment' hdl
                  , addChapter   = addChapter' hdl
                  , getLastInfo  = getLastInfo' hdl
+                 , getChapterComments = getChapterComments' hdl
                  }
 
 handleDefault :: b -> String -> Either String a -> (a -> IO b) -> IO b
@@ -176,6 +177,35 @@ checkSchema hdl = txn hdl $ mapM_ (defineTableOpt hdl True)
       tCol c = tColN c [notNull]
       t n cs = Q.Table n cs []
       txt = Q.SQLBlob $ Q.NormalBlob Nothing
+
+getChapterComments' :: SQLiteHandle -> ChapterId -> IO [(CommentId, Comment)]
+getChapterComments' hdl chId = do
+  let sql = "SELECT comments.comment_id, name, comment, \
+            \       email, date, session_id \
+            \FROM comments JOIN chapters \
+            \              ON comments.comment_id = chapters.comment_id \
+            \WHERE chapters.chapter_id = :chapter_id \
+            \ORDER BY comments.date DESC"
+      binder = [(":chapter_id", txtBlob $ chapterId chId)]
+  res <- execParamStatement hdl sql binder
+  let toResult [ (_, Q.Blob cIdB)
+               , (_, Q.Blob n)
+               , (_, Q.Blob c)
+               , (_, ef)
+               , (_, Q.Double i)
+               , (_, Q.Blob sid)
+               ] = do
+        e <- loadEmail ef
+        cId <- maybeToList $ mkCommentId $ E.decodeUtf8 cIdB
+        let d = realToFrac i
+            name = E.decodeUtf8 n
+            commentTxt = E.decodeUtf8 c
+            sId = SessionId sid
+            comment = Comment name commentTxt e d sId
+        [(cId, comment)]
+      toResult _ = []
+  handleDefault [] "loading comments for chapter" res $
+                return . concatMap toResult . concat
 
 --------------------------------------------------
 -- Helpers

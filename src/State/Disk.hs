@@ -7,25 +7,26 @@ module State.Disk
     )
 where
 
-import Control.Applicative ( (<$>) )
-import Control.Arrow       ( second )
-import Control.Monad       ( when )
-import Data.Binary         ( encode, decode )
-import Data.Maybe          ( fromMaybe, mapMaybe )
-import System.Directory    ( getDirectoryContents, createDirectoryIfMissing )
-import System.FilePath     ( (</>) )
-import System.IO           ( withBinaryFile, IOMode(ReadMode, WriteMode) )
-import Data.Bits           ( (.&.), shiftR )
-import Data.Char           ( chr )
+import Control.Applicative   ( (<$>) )
+import Control.Arrow         ( second )
+import Control.Monad         ( when )
+import Data.Binary           ( encode, decode )
+import Data.Bits             ( (.&.), shiftR )
+import Data.Char             ( chr )
+import Data.Function         ( on )
+import Data.List             ( nub, sortBy )
+import Data.Maybe            ( fromMaybe, mapMaybe )
 import Data.Time.Clock.POSIX ( POSIXTime )
+import Data.Word             ( Word8 )
+import Numeric               ( readHex )
+import System.Directory      ( getDirectoryContents, createDirectoryIfMissing )
+import System.FilePath       ( (</>) )
+import System.IO             ( withBinaryFile, IOMode(ReadMode, WriteMode) )
+import qualified Data.ByteString      as BS
 import qualified Data.ByteString.Lazy as B
 import qualified Data.Text            as T
-import qualified Data.Text.IO         as T
 import qualified Data.Text.Encoding   as E
-import qualified Data.ByteString      as BS
-import Data.Word ( Word8 )
-import Data.List ( nub )
-import Numeric ( readHex )
+import qualified Data.Text.IO         as T
 
 import State.Types         ( State(..), CommentId, commentId , ChapterId
                            , chapterId, mkCommentId, Comment(..)
@@ -100,6 +101,17 @@ new storeDir =
                        , getLastInfo =
                          \sId -> fmap (\(n, e, _) -> SessionInfo n e)
                                  `fmap` readSession sId
+
+                       , getChapterComments =
+                         \chId -> do
+                           mCIds <- readChapterFile chId
+                           let fixUp (cId, cs) = map ((,) cId) cs
+                               sortDateDesc = sortBy $ flip $
+                                              (compare `on` (cDate . snd))
+                           case mCIds of
+                             Nothing -> return []
+                             Just cIds -> sortDateDesc . concatMap fixUp <$>
+                                          readComments cIds
                        }
     where
       commentsDir = storeDir </> "comments"

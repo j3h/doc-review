@@ -37,6 +37,9 @@ new = do
 
              , getLastInfo  = \sid ->
                               withMVar v $ return . getInfo' sid
+
+             , getChapterComments =
+               \chId -> withMVar v $ return . getChapterComments' chId
              }
 
 --------------------------------------------------
@@ -87,3 +90,11 @@ addComment' cId mChId c st =
     st { cms = Map.alter (addSeq c) cId $ cms st }
     where
       addSeq x = return . (S.|> x) . maybe S.empty id
+
+getChapterComments' :: ChapterId -> MemState -> [(CommentId, Comment)]
+getChapterComments' chId st =
+    let sortDateDesc       = sortBy $ flip (compare `on` (cDate . snd))
+        lookupComments cId = maybe [] (map ((,) cId) . toList) $
+                             Map.lookup cId $ cms st
+    in sortDateDesc $ concatMap lookupComments $
+       maybe [] toList $ Map.lookup chId $ chs st

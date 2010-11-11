@@ -39,11 +39,12 @@ data SessionInfo = SessionInfo { siName :: !T.Text
 
 data State =
     State
-    { findComments :: CommentId -> IO [Comment]
-    , getCounts :: Maybe ChapterId -> IO [(CommentId, Int)]
-    , addComment :: CommentId -> Maybe ChapterId -> Comment -> IO ()
-    , addChapter :: ChapterId -> [CommentId] -> IO ()
-    , getLastInfo :: SessionId -> IO (Maybe SessionInfo)
+    { findComments       :: CommentId -> IO [Comment]
+    , getCounts          :: Maybe ChapterId -> IO [(CommentId, Int)]
+    , addComment         :: CommentId -> Maybe ChapterId -> Comment -> IO ()
+    , addChapter         :: ChapterId -> [CommentId] -> IO ()
+    , getLastInfo        :: SessionId -> IO (Maybe SessionInfo)
+    , getChapterComments :: ChapterId -> IO [(CommentId, Comment)]
     }
 
 data Comment =

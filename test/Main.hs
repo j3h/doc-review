@@ -6,13 +6,14 @@ where
 import State.Types ( State, ChapterId, mkChapterId, CommentId
                    , Comment, getCounts, findComments, mkCommentId
                    , addChapter, Comment(..), addComment, SessionId(..)
-                   , getLastInfo, SessionInfo(..)
+                   , getLastInfo, SessionInfo(..), getChapterComments
                    )
 import qualified State.Mem
 import qualified State.Disk
 import qualified State.SQLite
 
-import Data.List ( sort )
+import Data.Function ( on )
+import Data.List ( sort, sortBy )
 import Data.Maybe ( fromJust )
 import Data.Array.Unboxed ( UArray, listArray, bounds, (!) )
 import Data.Char ( isPrint, chr )
@@ -59,12 +60,15 @@ data Operation = GetCounts (Maybe ChapterId)
                | AddChapter ChapterId [CommentId]
                | AddComment CommentId (Maybe ChapterId) Comment
                | GetLastInfo SessionId
+               | GetChapterComments ChapterId
                  deriving Show
 
 data Result = Unit
             | LastInfo (Maybe SessionInfo)
             | Counts [(CommentId, Int)]
-            | Comments [Comment] deriving (Eq, Show)
+            | Comments [Comment]
+            | ChapterComments [(CommentId, Comment)]
+              deriving (Eq, Show)
 
 applyOp :: Operation -> State -> IO Result
 applyOp (GetCounts p) st            = Counts . sort <$> getCounts st p
@@ -72,9 +76,15 @@ applyOp (FindComments cId) st       = Comments <$> findComments st cId
 applyOp (AddChapter chId cIds) st   = addChapter st chId cIds >> return Unit
 applyOp (AddComment cId mChId c) st = addComment st cId mChId c >> return Unit
 applyOp (GetLastInfo sId) st        = LastInfo <$> getLastInfo st sId
+applyOp (GetChapterComments chId) st = ChapterComments <$> getChapterComments st chId
 
 choice :: [a] -> IO a
 choice xs = (xs !!) <$> getRandomR (0, length xs - 1)
+
+shuffle :: [a] -> IO [a]
+shuffle xs = do
+  is <- replicateM (length xs) getRandom :: IO [Double]
+  return $ map snd $ sortBy (compare `on` fst) $ zip is xs
 
 randomOp :: IO Operation
 randomOp = join $ choice $ readOps ++ writeOps
@@ -86,6 +96,7 @@ readOps :: [IO Operation]
 readOps = [ GetCounts <$> maybeRand randomChapterId
           , FindComments <$> randomCommentId
           , GetLastInfo <$> randomSessionId
+          , GetChapterComments <$> randomChapterId
           ]
 
 writeOps :: [IO Operation]
@@ -185,9 +196,52 @@ storeLoadComment st = do
   unless (cs' == (cs ++ [c])) $
          error "Expected the added comment to come up after adding"
 
-runSomeTests :: State -> IO ()
-runSomeTests st = do
-  storeLoadComment st
+-- |Test that a comment for a node that is part of a chapter is
+-- returned when we request comments for this chapter
+storeLoadCommentChapter :: State -> IO ()
+storeLoadCommentChapter st = do
+  chId <- randomChapterId
+  cId <- randomCommentId
+  addChapter st chId [cId]
+  cs <- getChapterComments st chId
+  c <- randomComment
+  addComment st cId (Just chId) c
+  let e = (cId, c)
+  cs' <- getChapterComments st chId
+  unless (length cs' == length cs + 1) $
+         error $ unlines [ "Adding a comment to a chapter didn't add:"
+                         , show cs
+                         , show cs'
+                         ]
+  unless (e `elem` cs') $
+         error "The expected pair is not part of the comments"
+
+chapterCommentsOrderedByDate :: State -> IO ()
+chapterCommentsOrderedByDate st = do
+  cs <- getChapterComments st =<< randomChapterId
+  let dates = map (cDate . snd) cs
+      ordered = and $ zipWith (>=) dates (drop 1 dates)
+  unless ordered $
+         error "The comments are not ordered by date"
+
+-- |Test some property (possibly with a side-effect)
+runArbitraryTest :: State -> IO ()
+runArbitraryTest st = ($ st) =<< choice allProps
+
+-- |All defined properties
+allProps :: [State -> IO ()]
+allProps = [ storeLoadComment
+           , chapterCommentsOrderedByDate
+           , storeLoadCommentChapter
+           ]
+
+-- |Run all of the properties at least once, in an arbitrary order
+runRandomTests :: State -> IO ()
+runRandomTests st = do
+  m <- getRandomR (0, 100)
+  let randomProps = replicate m $ runArbitraryTest st
+  props <- shuffle $ map ($ st) allProps ++ randomProps
+  sequence_ props
 
 main :: IO ()
 main = do
@@ -203,17 +257,19 @@ main = do
          st <- mkStore d typ
 
          -- Run some tests on an empty store
-         runSomeTests st
+         runRandomTests st
 
          replicateM 10 $ do
+           putStr "."
+           hFlush stdout
+
            -- Do some random operations to get the store into a
            -- different state
            n <- getRandomR (10, 500)
            ops <- replicateM n randomWriteOp
            forM_ ops $ \op -> applyOp op st
 
-           -- Make sure the tests still pass in this new state
-           runSomeTests st
+           runRandomTests st
 
   putStrLn "done.\nRunning store consistency tests"
   -- Test that completely randomized operations have the same
