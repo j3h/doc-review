@@ -36,6 +36,7 @@ commentFeed k chId cs docURI limit =
           Feed.withItemAuthor (T.unpack $ cName c) $
           Feed.withItemDescription (T.unpack $ cComment c) $
           Feed.withItemPubDate (commentDateStr c) $
+          -- XXX: this does not seem to actually add the link!
           Feed.withItemLink (itemURI cId) $
           Feed.withItemId True (itemURI cId) $
           Feed.newItem k
