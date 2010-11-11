@@ -29,6 +29,9 @@ import qualified Data.Text                        as T
 import qualified Data.Text.Encoding               as E
 import qualified Text.JSON                        as JSON
 import qualified Text.XHtmlCombinators.Attributes as A
+import qualified Text.XML.Light.Output            as XML
+import qualified Text.Feed.Export                 as Feed
+import qualified Text.Feed.Types                  as Feed
 
 import           Config           ( Config(..), ScanType(..), parseOptions
                                   , opts, Action(..) )
@@ -38,6 +41,7 @@ import           Server
 import           State.Types
 import qualified State.Logger as L
 import           Paths_doc_review ( getDataFileName )
+import           Feed ( commentFeed )
 
 usage :: IO String
 usage = do
@@ -107,6 +111,7 @@ app static cfg st sessionId =
     dir "comments"
             (route [ ("single/:id", getCommentHandler st sessionId)
                    , ("chapter/:chapid/count/", getCountsHandler st)
+                   , ("chapter/:chapid/feed", getChapterFeedHandler st)
                    , ("submit/:id", submitHandler st sessionId)
                    ]) <|>
     fileServe (cfgContentDir cfg) <|>
@@ -116,7 +121,14 @@ app static cfg st sessionId =
 -- |Redirect to the supplied URI (relative to the current request's
 -- URI)
 relativeRedirect :: URI -> Snap ()
-relativeRedirect d =
+relativeRedirect d = do
+  u <- thisURL
+  -- relativeTo's implementation always returns Just
+  redirect $ B.pack $ show $ fromJust $ d `relativeTo` u
+
+
+thisURL :: Snap URI
+thisURL =
     withRequest $ \req -> do
       let host = B.unpack $ rqServerName req
 
@@ -136,9 +148,7 @@ relativeRedirect d =
         Nothing -> finishWith $ badRequest $
                    T.concat ["Bad host header: ", T.pack host]
 
-        Just u  ->
-            -- relativeTo's implementation always returns Just
-            redirect $ B.pack $ show $ fromJust $ d `relativeTo` u
+        Just u  -> return u
 
 newSessionId :: IO SessionId
 newSessionId = SessionId . B.pack <$> replicateM 24 selectRandomSessionChar
@@ -178,6 +188,17 @@ trackSession act = do
 
 --------------------------------------------------
 -- Handlers
+
+getChapterFeedHandler :: State -> Snap ()
+getChapterFeedHandler st = do
+  chapId <- fromJust . mkChapterId <$> requireParam "chapid"
+  let limit = Just 10
+      k = Feed.AtomKind
+  cs <- liftIO $ getChapterComments st chapId
+  modifyResponse $ addHeader "content-type" "application/atom+xml"
+  u <- thisURL
+  writeText $ T.pack $ XML.showTopElement $
+            Feed.xmlFeed $ commentFeed k chapId cs u limit
 
 getCountsHandler :: State -> Snap ()
 getCountsHandler st = do
