@@ -22,6 +22,7 @@ import qualified Data.Text.Encoding as E
 import Data.Binary ( Binary(..), Get )
 import Data.Time.Clock.POSIX ( POSIXTime )
 import qualified Data.ByteString as B
+import Network.URI ( URI )
 
 newtype CommentId = CommentId { commentId :: T.Text } deriving (Ord, Eq, Show)
 instance Binary CommentId where
@@ -41,22 +42,26 @@ data State =
     State
     { findComments       :: CommentId -> IO [Comment]
     , getCounts          :: Maybe ChapterId -> IO [(CommentId, Int)]
-    , addComment         :: CommentId -> Maybe ChapterId -> Comment -> IO ()
-    , addChapter         :: ChapterId -> [CommentId] -> IO ()
     , getLastInfo        :: SessionId -> IO (Maybe SessionInfo)
     , getChapterComments :: ChapterId -> IO [(CommentId, Comment)]
+    , getChapterURI      :: ChapterId -> IO (Maybe URI)
+
+    , addComment         :: CommentId -> Maybe ChapterId -> Comment -> IO ()
+    , addChapter         :: ChapterId -> [CommentId] -> Maybe URI -> IO ()
     }
 
 data Comment =
     Comment
-    { cName :: !T.Text
+    { cName    :: !T.Text
     , cComment :: !T.Text
-    , cEmail :: Maybe T.Text
-    , cDate :: !POSIXTime
+    , cEmail   :: Maybe T.Text
+    , cDate    :: !POSIXTime
     , cSession :: !SessionId
     } deriving (Show, Eq)
 
-newtype SessionId = SessionId { sidBS :: B.ByteString } deriving ( Eq, Show, Ord )
+newtype SessionId =
+    SessionId { sidBS :: B.ByteString }
+    deriving ( Eq, Show, Ord )
 
 instance Binary Comment where
     put (Comment name comment email date sid) =

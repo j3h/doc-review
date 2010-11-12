@@ -20,8 +20,9 @@ import Data.Time.Clock.POSIX ( POSIXTime )
 import Data.Word             ( Word8 )
 import Numeric               ( readHex )
 import System.Directory      ( getDirectoryContents, createDirectoryIfMissing )
-import System.FilePath       ( (</>) )
+import System.FilePath       ( (</>), (<.>) )
 import System.IO             ( withBinaryFile, IOMode(ReadMode, WriteMode) )
+import Network.URI           ( parseRelativeReference, URI )
 import qualified Data.ByteString      as BS
 import qualified Data.ByteString.Lazy as B
 import qualified Data.Text            as T
@@ -89,7 +90,7 @@ new storeDir =
                          \cId chId c -> do
                            case chId of
                              Nothing -> return ()
-                             Just chap -> addChapter' chap [cId]
+                             Just chap -> addChapter' chap [cId] (Nothing :: Maybe URI)
                            cs <- findComments' cId
                            writeCommentsFile cId (cs ++ [c])
                            writeSession (cSession c) (cName c)
@@ -112,6 +113,8 @@ new storeDir =
                              Nothing -> return []
                              Just cIds -> sortDateDesc . concatMap fixUp <$>
                                           readComments cIds
+
+                       , getChapterURI = getChapterURI'
                        }
     where
       commentsDir = storeDir </> "comments"
@@ -138,10 +141,20 @@ new storeDir =
       chaptersDir = storeDir </> "chapters"
 
       chapterPath chId = chaptersDir </> safe (chapterId chId)
+      chapterURIPath chId = chapterPath chId <.> "uri"
 
-      addChapter' chId cIds = do
+      addChapter' chId cIds mURI = do
         cIds' <- fromMaybe [] <$> readChapterFile chId
         writeChapterFile chId (nub $ cIds ++ cIds')
+        case mURI of
+          Nothing -> return ()
+          Just u  -> T.writeFile (chapterURIPath chId) $ T.pack $ show u
+
+      getChapterURI' chId = tryRead `catch` \_ -> return Nothing
+          where
+            tryRead =
+                parseRelativeReference . T.unpack <$>
+                T.readFile (chapterURIPath chId)
 
       readChapterFile chId = (Just `fmap` tryRead) `catch` \_ -> return Nothing
           where

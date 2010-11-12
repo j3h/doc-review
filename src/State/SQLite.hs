@@ -4,6 +4,7 @@ module State.SQLite
     )
 where
 
+import Network.URI ( URI, parseRelativeReference )
 import Data.Maybe ( listToMaybe, maybeToList )
 import Data.List ( intercalate )
 import System.IO ( hPutStrLn, stderr )
@@ -22,7 +23,7 @@ import qualified Database.SQLite as Q
 import State.Types         ( State(..), CommentId, commentId , ChapterId
                            , chapterId, mkCommentId, Comment(..)
                            , SessionId(..), SessionInfo(..) )
-import Control.Monad ( forM_, when )
+import Control.Monad ( forM_, when, (<=<) )
 
 -- |Open a new SQLite comment store
 new :: FilePath -> IO State
@@ -35,6 +36,7 @@ new dbName = do
                  , addChapter   = addChapter' hdl
                  , getLastInfo  = getLastInfo' hdl
                  , getChapterComments = getChapterComments' hdl
+                 , getChapterURI = getChapterURI' hdl
                  }
 
 handleDefault :: b -> String -> Either String a -> (a -> IO b) -> IO b
@@ -147,9 +149,31 @@ insertChapterComment cId chId hdl = do
                 , ("comment_id", txtBlob $ commentId cId)
                 ]
 
-addChapter' :: SQLiteHandle -> ChapterId -> [CommentId] -> IO ()
-addChapter' hdl chId cIds =
-    txn hdl $ forM_ cIds $ \cId -> insertChapterComment cId chId hdl
+addChapter' :: SQLiteHandle -> ChapterId -> [CommentId] -> Maybe URI -> IO ()
+addChapter' hdl chId cIds mURI =
+    txn hdl $ do
+      forM_ cIds $ \cId -> insertChapterComment cId chId hdl
+      case mURI of
+        Nothing -> return ()
+        Just uri ->
+            do let sql = "INSERT OR REPLACE INTO \
+                         \    chapter_info (chapter_id, url) \
+                         \VALUES (:chId, :url)"
+                   binder = [ (":chId", txtBlob $ chapterId chId)
+                            , (":url", txtBlob $ T.pack $ show uri)
+                            ]
+               maybeErr =<< execParamStatement_ hdl sql binder
+
+getChapterURI' :: SQLiteHandle -> ChapterId -> IO (Maybe URI)
+getChapterURI' hdl chId = do
+  let sql = "SELECT url FROM chapter_info WHERE chapter_id = :chId"
+      binder = [(":chId", txtBlob $ chapterId chId)]
+      convertRow [(_, Q.Blob u)] =
+          maybeToList $ parseRelativeReference $ T.unpack $ E.decodeUtf8 u
+      convertRow _ = []
+  res <- execParamStatement hdl sql binder
+  handleDefault Nothing "getting URI" res $
+                return . listToMaybe . concatMap convertRow . concat
 
 -- If the tables we expect are not there, add them (to deal with the
 -- case that this is a new database)
@@ -157,19 +181,40 @@ addChapter' hdl chId cIds =
 -- This can cause problems if the schema changes, since it does not
 -- actually check to see that the schema matches what we expect.
 checkSchema :: SQLiteHandle -> IO ()
-checkSchema hdl = txn hdl $ mapM_ (defineTableOpt hdl True)
-                  [ t "comments"
-                          [ tCol "comment_id"
-                          , tCol "name"
-                          , tCol "comment"
-                          , tColN "email" []
-                          , Q.Column "date" real [notNull]
-                          , tCol "session_id"
-                          ]
-                  , t "chapters" [ tCol "chapter_id"
-                                 , tCol "comment_id"
-                                 ]
-                  ]
+checkSchema hdl =
+    txn hdl $ do
+      mapM_ (maybeErr <=< defineTableOpt hdl True)
+                [ t "comments"
+                        [ tCol "comment_id"
+                        , tCol "name"
+                        , tCol "comment"
+                        , tColN "email" []
+                        , Q.Column "date" real [notNull]
+                        , tCol "session_id"
+                        ]
+                , t "chapters" [ tCol "chapter_id"
+                               , tCol "comment_id"
+                               ]
+                , t "chapter_info" [ tColN "chapter_id" [ notNull
+                                                        , Q.PrimaryKey False
+                                                        ]
+                                   , tColN "url" []
+                                   ]
+                ]
+      mapM_ (maybeErr <=< execStatement_ hdl)
+                [ "CREATE INDEX IF NOT EXISTS comments_comment_id_idx \
+                  \ON comments(comment_id)"
+                , "CREATE INDEX IF NOT EXISTS chapters_comment_id_idx \
+                  \ON chapters(comment_id)"
+                , "CREATE INDEX IF NOT EXISTS chapters_chapter_id_idx \
+                  \ON chapters(chapter_id)"
+                , "CREATE INDEX IF NOT EXISTS comments_date_idx \
+                  \ON comments(date)"
+                , "CREATE INDEX IF NOT EXISTS comments_session_id \
+                  \ON comments(session_id)"
+                , "CREATE INDEX IF NOT EXISTS chapter_info_chapter_id \
+                  \ON chapters(chapter_id)"
+                ]
     where
       real = Q.SQLFloat Nothing Nothing
       tColN c cs = Q.Column c txt cs

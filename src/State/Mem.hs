@@ -5,15 +5,17 @@ where
 
 import State.Types
 
-import Data.Maybe ( listToMaybe )
+import Data.Maybe ( listToMaybe, fromMaybe )
 import Data.Function ( on )
 import Data.List ( sortBy )
+import Control.Monad ( mplus )
 import qualified Data.Sequence as S
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import Data.Foldable ( toList )
 import Control.Concurrent.MVar ( newMVar, withMVar, modifyMVar_ )
-import Control.Arrow ( second )
+import Control.Arrow ( second, (***) )
+import Network.URI ( URI )
 
 --------------------------------------------------
 -- Stateful
@@ -32,22 +34,42 @@ new = do
              , addComment   = \cId chId c ->
                               modifyMVar_ v $ return . addComment' cId chId c
 
-             , addChapter   = \chId cIds ->
-                              modifyMVar_ v $ return . addChapter' chId cIds
+             , addChapter   = \chId cIds mURI ->
+                              modifyMVar_ v $ return . addChapter' chId cIds mURI
 
              , getLastInfo  = \sid ->
                               withMVar v $ return . getInfo' sid
 
              , getChapterComments =
                \chId -> withMVar v $ return . getChapterComments' chId
+
+             , getChapterURI = \chId -> withMVar v $ return . chapterURI chId
              }
 
 --------------------------------------------------
 -- Pure
 
-data MemState = MemState { chs :: Map.Map ChapterId (Set.Set CommentId)
+data MemState = MemState { chs :: Map.Map ChapterId (Maybe URI, Set.Set CommentId)
                          , cms :: Map.Map CommentId (S.Seq Comment)
                          }
+
+chapterComments :: ChapterId -> MemState -> Set.Set CommentId
+chapterComments chId = maybe Set.empty snd . Map.lookup chId . chs
+
+chapterURI :: ChapterId -> MemState -> Maybe URI
+chapterURI chId st = fst =<< Map.lookup chId (chs st)
+
+withChapterComments :: (Set.Set CommentId -> Set.Set CommentId)
+                    -> ChapterId -> MemState -> MemState
+withChapterComments = withChapter . second
+
+withChapter :: ((Maybe URI, Set.Set CommentId) -> (Maybe URI, Set.Set CommentId))
+            -> ChapterId -> MemState -> MemState
+withChapter f chId st =
+    let upd x = case f $ fromMaybe (Nothing, Set.empty) x of
+                  (Nothing, s) | Set.null s -> Nothing
+                  p                         -> Just p
+    in st { chs = Map.alter upd chId $ chs st }
 
 emptyMemState :: MemState
 emptyMemState = MemState Map.empty Map.empty
@@ -72,21 +94,17 @@ getCounts' mChId st =
     case mChId of
       Nothing   -> cms st
       Just chId ->
-          case Map.lookup chId $ chs st of
-            Nothing -> Map.empty
-            Just cIds ->
-                let p k _ =  k `Set.member` cIds
-                in Map.filterWithKey p (cms st)
+          let cIds = chapterComments chId st
+              p k _ =  k `Set.member` cIds
+          in Map.filterWithKey p (cms st)
 
-addChapter' :: ChapterId -> [CommentId] -> MemState -> MemState
-addChapter' chId cIds st =
-    st { chs = Map.alter addSet chId (chs st) }
-    where
-      addSet = return . (Set.union $ Set.fromList cIds) . maybe Set.empty id
+addChapter' :: ChapterId -> [CommentId] -> Maybe URI -> MemState -> MemState
+addChapter' chId cIds mURI =
+    withChapter ((mURI `mplus`) *** (Set.union $ Set.fromList cIds)) chId
 
 addComment' :: CommentId -> Maybe ChapterId -> Comment -> MemState -> MemState
 addComment' cId mChId c st =
-    maybe id (\chId -> addChapter' chId [cId]) mChId $
+    maybe id (withChapterComments (Set.insert cId)) mChId $
     st { cms = Map.alter (addSeq c) cId $ cms st }
     where
       addSeq x = return . (S.|> x) . maybe S.empty id
@@ -97,4 +115,4 @@ getChapterComments' chId st =
         lookupComments cId = maybe [] (map ((,) cId) . toList) $
                              Map.lookup cId $ cms st
     in sortDateDesc $ concatMap lookupComments $
-       maybe [] toList $ Map.lookup chId $ chs st
+       toList $ chapterComments chId st

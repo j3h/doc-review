@@ -7,13 +7,15 @@ import State.Types ( State, ChapterId, mkChapterId, CommentId
                    , Comment, getCounts, findComments, mkCommentId
                    , addChapter, Comment(..), addComment, SessionId(..)
                    , getLastInfo, SessionInfo(..), getChapterComments
+                   , getChapterURI
                    )
 import qualified State.Mem
 import qualified State.Disk
 import qualified State.SQLite
 
+import Network.URI ( URI, parseRelativeReference )
 import Data.Function ( on )
-import Data.List ( sort, sortBy )
+import Data.List ( sort, sortBy, intercalate )
 import Data.Maybe ( fromJust )
 import Data.Array.Unboxed ( UArray, listArray, bounds, (!) )
 import Data.Char ( isPrint, chr )
@@ -57,10 +59,11 @@ withRandomStores act = do
 
 data Operation = GetCounts (Maybe ChapterId)
                | FindComments CommentId
-               | AddChapter ChapterId [CommentId]
+               | AddChapter ChapterId [CommentId] (Maybe URI)
                | AddComment CommentId (Maybe ChapterId) Comment
                | GetLastInfo SessionId
                | GetChapterComments ChapterId
+               | GetChapterURI ChapterId
                  deriving Show
 
 data Result = Unit
@@ -68,15 +71,17 @@ data Result = Unit
             | Counts [(CommentId, Int)]
             | Comments [Comment]
             | ChapterComments [(CommentId, Comment)]
+            | ChapterURI (Maybe URI)
               deriving (Eq, Show)
 
 applyOp :: Operation -> State -> IO Result
-applyOp (GetCounts p) st            = Counts . sort <$> getCounts st p
-applyOp (FindComments cId) st       = Comments <$> findComments st cId
-applyOp (AddChapter chId cIds) st   = addChapter st chId cIds >> return Unit
-applyOp (AddComment cId mChId c) st = addComment st cId mChId c >> return Unit
-applyOp (GetLastInfo sId) st        = LastInfo <$> getLastInfo st sId
-applyOp (GetChapterComments chId) st = ChapterComments <$> getChapterComments st chId
+applyOp (GetCounts p) st               = Counts . sort <$> getCounts st p
+applyOp (FindComments cId) st          = Comments <$> findComments st cId
+applyOp (AddChapter chId cIds mURI) st = addChapter st chId cIds mURI >> return Unit
+applyOp (AddComment cId mChId c) st    = addComment st cId mChId c >> return Unit
+applyOp (GetLastInfo sId) st           = LastInfo <$> getLastInfo st sId
+applyOp (GetChapterComments chId) st   = ChapterComments <$> getChapterComments st chId
+applyOp (GetChapterURI chId) st        = ChapterURI <$> getChapterURI st chId
 
 choice :: [a] -> IO a
 choice xs = (xs !!) <$> getRandomR (0, length xs - 1)
@@ -97,13 +102,17 @@ readOps = [ GetCounts <$> maybeRand randomChapterId
           , FindComments <$> randomCommentId
           , GetLastInfo <$> randomSessionId
           , GetChapterComments <$> randomChapterId
+          , GetChapterURI <$> randomChapterId
           ]
 
 writeOps :: [IO Operation]
 writeOps = [ let cIds = do
                    n <- getRandomR (0, 100)
                    replicateM n $ randomCommentId
-             in AddChapter <$> randomChapterId <*> cIds
+             in AddChapter <$>
+                randomChapterId <*>
+                cIds <*>
+                maybeRand randomRelativeReference
            , AddComment
              <$> randomCommentId
              <*> maybeRand randomChapterId
@@ -123,6 +132,17 @@ randomCommentId = fromJust . mkCommentId <$> randomText
 
 randomSessionId :: IO SessionId
 randomSessionId = SessionId <$> randomBS
+
+randomRelativeReference :: IO URI
+randomRelativeReference = do
+  nSegs <- getRandomR (0, 5)
+  let getSeg = join $ choice
+               [ choice ["a", "b", "c"]
+               , do segLength <- getRandomR (1, 10)
+                    replicateM segLength $
+                               choice $ ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9']
+               ]
+  fromJust . parseRelativeReference . ('/':) . intercalate "/" <$> replicateM nSegs getSeg
 
 usableChars :: UArray Int Char
 usableChars = listArray (0, length cs - 1) cs
@@ -202,7 +222,8 @@ storeLoadCommentChapter :: State -> IO ()
 storeLoadCommentChapter st = do
   chId <- randomChapterId
   cId <- randomCommentId
-  addChapter st chId [cId]
+  ref <- maybeRand randomRelativeReference
+  addChapter st chId [cId] ref
   cs <- getChapterComments st chId
   c <- randomComment
   addComment st cId (Just chId) c

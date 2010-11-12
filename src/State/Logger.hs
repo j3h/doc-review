@@ -19,15 +19,18 @@ import System.IO ( stderr, openBinaryFile, hPutStrLn, hClose, hFlush
 import Data.ByteString.Lazy as B
 import Data.Binary.Get ( runGetState )
 import Data.Binary ( Binary(..), getWord8, putWord8, encode )
-import Control.Applicative ( (<$>), (<*>) )
+import Control.Applicative ( (<$>), (<*>), pure )
 import Control.Concurrent.MVar ( MVar, newMVar, modifyMVar )
 import Control.Concurrent ( forkIO, threadDelay )
 import Data.Monoid ( mempty, mappend, Monoid )
+import Network.URI ( URI, parseRelativeReference )
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 
 import State.Types
 
 data Action = AddComment CommentId (Maybe ChapterId) Comment
-            | AddChapter ChapterId [CommentId]
+            | AddChapter ChapterId [CommentId] (Maybe URI)
               deriving (Eq, Show)
 
 instance Binary Action where
@@ -35,7 +38,8 @@ instance Binary Action where
       ty <- getWord8
       case ty of
         0xfe -> AddComment <$> get <*> get <*> get
-        0xff -> AddChapter <$> get <*> get
+        0xff -> AddChapter <$> get <*> get <*> pure Nothing
+        0xfd -> AddChapter <$> get <*> get <*> (parseRelativeReference <$> get)
         _    -> error $ "Bad type code: " ++ show ty
 
     put (AddComment cId mChId c) =
@@ -43,10 +47,15 @@ instance Binary Action where
            put cId
            put mChId
            put c
-    put (AddChapter chId cs) =
+    put (AddChapter chId cs Nothing) =
         do putWord8 0xff
            put chId
            put cs
+    put (AddChapter chId cs (Just uri)) =
+        do putWord8 0xfd
+           put chId
+           put cs
+           put $ T.encodeUtf8 $ T.pack $ show uri
 
 -- Attempt to replay a log file, skipping corrupted sections of the file
 foldLogFile :: Binary act => (act -> a -> IO a) -> a -> B.ByteString -> IO a
@@ -67,8 +76,8 @@ replay :: State -> B.ByteString -> IO ()
 replay st =
     foldLogFile_ $ \act ->
     case act of
-      AddComment cId mChId c -> addComment st cId mChId c
-      AddChapter chId cs     -> addChapter st chId cs
+      AddComment cId mChId c  -> addComment st cId mChId c
+      AddChapter chId cs mURI -> addChapter st chId cs mURI
 
 -- | Strict fold over the comments in the log file
 foldComments :: (CommentId -> Maybe ChapterId -> Comment -> b -> b) -> b
@@ -76,7 +85,7 @@ foldComments :: (CommentId -> Maybe ChapterId -> Comment -> b -> b) -> b
 foldComments f =
     foldLogFile $ \act ->
     case act of
-      AddChapter _ _         -> return
+      AddChapter _ _ _       -> return
       AddComment cId mChId c -> \x -> let x' = f cId mChId c x
                                       in  x' `seq` return x'
 
@@ -95,9 +104,9 @@ wrap logFileName st = do
                              writeLog logFileName ref $ AddComment cId mChId c
                              addComment st cId mChId c
 
-            , addChapter = \chId cs -> do
-                             writeLog logFileName ref $ AddChapter chId cs
-                             addChapter st chId cs
+            , addChapter = \chId cs mURI -> do
+                             writeLog logFileName ref $ AddChapter chId cs mURI
+                             addChapter st chId cs mURI
             }
 
 -- |Attempt to close the log file every five minutes so that we can

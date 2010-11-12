@@ -83,7 +83,7 @@ loadChapters :: FilePath -> State -> IO ()
 loadChapters chapterDir st = do
   chapters <- analyzeDirectory chapterDir
   forM_ chapters $ \(mChId, cIds) ->
-      maybe (return ()) (\chId -> addChapter st chId cIds) mChId
+      maybe (return ()) (\chId -> addChapter st chId cIds Nothing) mChId
 
 runServer :: Config -> State -> IO ()
 runServer cfg st = do
@@ -122,13 +122,14 @@ app static cfg st sessionId =
 -- URI)
 relativeRedirect :: URI -> Snap ()
 relativeRedirect d = do
-  u <- thisURL
+  u <- baseURL
   -- relativeTo's implementation always returns Just
   redirect $ B.pack $ show $ fromJust $ d `relativeTo` u
 
-
-thisURL :: Snap URI
-thisURL =
+-- |The base URL for this request (taking into account the protocol,
+-- the host, and the port)
+baseURL :: Snap URI
+baseURL =
     withRequest $ \req -> do
       let host = B.unpack $ rqServerName req
 
@@ -196,7 +197,7 @@ getChapterFeedHandler st = do
       k = Feed.AtomKind
   cs <- liftIO $ getChapterComments st chapId
   modifyResponse $ addHeader "content-type" "application/atom+xml"
-  u <- thisURL
+  u <- baseURL
   writeText $ T.pack $ XML.showTopElement $
             Feed.xmlFeed $ commentFeed k chapId cs u limit
 
