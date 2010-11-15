@@ -13,6 +13,8 @@ import Network.URI ( URI(uriFragment) )
 import qualified Data.Text as T
 import qualified Text.Atom.Feed as Atom
 
+-- XXX: This is inefficient if there are a lot of comments, because
+-- the results are all loaded from storage and then trimmed down here.
 commentFeed :: ChapterId -> [(CommentId, Comment)] -> URI -> Maybe Int
             -> Atom.Feed
 commentFeed chId cs docURI limit =
@@ -25,13 +27,13 @@ commentFeed chId cs docURI limit =
                         { Atom.linkRel = Just $ Left "alternate"
                         , Atom.linkType = Just "text/html"
                         }
-      chapterURI = docFragText $ chapterId chId
-      itemURI cId = docFragText $ commentId cId
-      docFragText t = show $ docURI { uriFragment = '#':T.unpack t }
-      commentDateStr = formatTime defaultTimeLocale "%c" .
-                       posixSecondsToUTCTime . cDate
-      feedDate = maybe "no-date" (commentDateStr . snd) $ listToMaybe cs
-      feedTitle = "Comments on " ++ (T.unpack $ chapterId chId)
+      chapterURI      = docFragText $ chapterId chId
+      itemURI cId     = docFragText $ commentId cId
+      docFragText t   = show $ docURI { uriFragment = '#':T.unpack t }
+      commentDateStr  = formatTime defaultTimeLocale "%c" .
+                         posixSecondsToUTCTime . cDate
+      feedDate        = maybe "no-date" (commentDateStr . snd) $ listToMaybe cs
+      feedTitle       = "Comments on " ++ (T.unpack $ chapterId chId)
 
       mkItem (cId, c) =
           let -- XXX: this identifier should have a comment id to make
