@@ -1,7 +1,7 @@
 module Analyze
     ( htmlIds
     , analyzeFile
-    , analyzeDirectory
+    , analyze
     )
 where
 import qualified Text.HTML.Tagchup.Parser as T ( runSoup )
@@ -17,16 +17,23 @@ import System.FilePath ( (</>), takeExtension )
 import qualified Data.Text as Txt
 import State.Types ( ChapterId, mkChapterId, CommentId, mkCommentId )
 
-analyzeDirectory :: FilePath -> IO [(Maybe ChapterId, [CommentId])]
-analyzeDirectory fn = do
-  let ignore = (`elem` [".", ".."])
-  fs <- filter (not . ignore) `fmap` getDirectoryContents fn
-  results <- forM fs $ \fn' ->
-             let p = fn </> fn'
-             in (if (takeExtension fn' == ".html")
-                 then analyzeFile p `catch` \_ -> analyzeDirectory p
-                 else analyzeDirectory p)
-                      `catch` \_ -> return []
+analyze :: FilePath -> IO [(FilePath, [(Maybe ChapterId, [CommentId])])]
+analyze fn = do
+  let ignoreEntry = (`elem` [".", ".."])
+
+      processEntry n
+          | takeExtension n == ".html" = processFile n `catch` \_ ->
+                                         processDir n
+          | otherwise                  = processDir n
+
+      processFile n = (\xs -> [(n, xs)]) `fmap` analyzeFile (fn </> n)
+      processDir n = map (first (n </>)) `fmap` analyze (fn </> n)
+
+  fs <- filter (not . ignoreEntry) `fmap` getDirectoryContents fn
+
+  results <- forM fs $ \n ->
+             processEntry n `catch` \_ -> return []
+
   return $ concat results
 
 analyzeFile :: FilePath -> IO [(Maybe ChapterId, [CommentId])]

@@ -12,7 +12,9 @@ import           Data.Time.Clock              ( getCurrentTime, addUTCTime )
 import           Data.Time.Clock.POSIX        ( getPOSIXTime
                                               , posixSecondsToUTCTime )
 import           Data.Time.Format             ( formatTime )
-import           Network.URI                  ( URI, relativeTo, parseURI )
+import           Network.URI                  ( URI, relativeTo, parseURI
+                                              , parseRelativeReference
+                                              )
 import           Prelude hiding               ( mapM_ )
 import           Snap.Iteratee                ( enumBS )
 import           Snap.Types
@@ -30,12 +32,11 @@ import qualified Data.Text.Encoding               as E
 import qualified Text.JSON                        as JSON
 import qualified Text.XHtmlCombinators.Attributes as A
 import qualified Text.XML.Light.Output            as XML
-import qualified Text.Feed.Export                 as Feed
-import qualified Text.Feed.Types                  as Feed
+import qualified Text.Atom.Feed.Export            as Atom
 
 import           Config           ( Config(..), ScanType(..), parseOptions
                                   , opts, Action(..) )
-import           Analyze          ( analyzeDirectory )
+import           Analyze          ( analyze )
 import           Privilege        ( tryDropPrivilege )
 import           Server
 import           State.Types
@@ -81,9 +82,11 @@ main = do
 -- database to include all of the chapter mappings
 loadChapters :: FilePath -> State -> IO ()
 loadChapters chapterDir st = do
-  chapters <- analyzeDirectory chapterDir
-  forM_ chapters $ \(mChId, cIds) ->
-      maybe (return ()) (\chId -> addChapter st chId cIds Nothing) mChId
+  files <- analyze chapterDir
+  forM_ files $ \(fn, chapters) -> do
+      let uri = parseRelativeReference fn
+      forM_ chapters $ \(mChId, cIds) ->
+          maybe (return ()) (\chId -> addChapter st chId cIds uri) mChId
 
 runServer :: Config -> State -> IO ()
 runServer cfg st = do
@@ -192,14 +195,23 @@ trackSession act = do
 
 getChapterFeedHandler :: State -> Snap ()
 getChapterFeedHandler st = do
-  chapId <- fromJust . mkChapterId <$> requireParam "chapid"
-  let limit = Just 10
-      k = Feed.AtomKind
-  cs <- liftIO $ getChapterComments st chapId
-  modifyResponse $ addHeader "content-type" "application/atom+xml"
-  u <- baseURL
-  writeText $ T.pack $ XML.showTopElement $
-            Feed.xmlFeed $ commentFeed k chapId cs u limit
+  Just chapId <- mkChapterId <$> requireParam "chapid"
+  makeAbsolute <- flip relativeTo <$> baseURL
+  chapURL <- liftIO $ getChapterURI st chapId
+  case chapURL >>= makeAbsolute of
+    Nothing -> do
+      modifyResponse $ setResponseStatus 404 "Not Found"
+                     . addHeader "content-type" "text/plain"
+      mapM_ writeBS [ "Chapter not found: "
+                    , E.encodeUtf8 $ chapterId chapId
+                    ]
+      finishWith =<< getResponse
+    Just u -> do
+      let limit = Just 10
+      cs <- liftIO $ getChapterComments st chapId
+      modifyResponse $ addHeader "content-type" "application/atom+xml"
+      writeText $ T.pack $ XML.showTopElement $
+                Atom.xmlFeed $ commentFeed chapId cs u limit
 
 getCountsHandler :: State -> Snap ()
 getCountsHandler st = do
