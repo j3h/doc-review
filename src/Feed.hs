@@ -15,11 +15,11 @@ import qualified Text.Atom.Feed as Atom
 
 -- XXX: This is inefficient if there are a lot of comments, because
 -- the results are all loaded from storage and then trimmed down here.
-commentFeed :: ChapterId -> [(CommentId, Comment)] -> URI -> Maybe Int
+commentFeed :: ChapterId -> [(CommentId, Comment)] -> URI
             -> Atom.Feed
-commentFeed chId cs docURI limit =
+commentFeed chId cs docURI =
     (Atom.nullFeed (show chapterURI) (Atom.TextString feedTitle) feedDate)
-    { Atom.feedEntries = map mkItem $ maybe id take limit cs
+    { Atom.feedEntries = map mkItem cs
     , Atom.feedLinks   = [ alternateHtml $ chapterURI ]
     }
     where

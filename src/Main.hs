@@ -6,13 +6,16 @@ import           Control.Arrow                ( first )
 import           Control.Monad                ( replicateM, guard )
 import           Control.Monad.IO.Class       ( liftIO )
 import           Control.Monad.Random         ( getRandomR )
+import           Data.Char                    ( toLower )
 import           Data.Foldable                ( mapM_, forM_ )
-import           Data.Maybe                   ( fromJust )
+import           Data.Maybe                   ( fromJust, fromMaybe )
 import           Data.Time.Clock              ( getCurrentTime, addUTCTime )
 import           Data.Time.Clock.POSIX        ( getPOSIXTime
                                               , posixSecondsToUTCTime )
 import           Data.Time.Format             ( formatTime )
-import           Network.URI                  ( URI, relativeTo, parseURI
+import           Network.URI                  ( URI(uriFragment)
+                                              , relativeTo
+                                              , parseURI
                                               , parseRelativeReference
                                               )
 import           Prelude hiding               ( mapM_ )
@@ -114,7 +117,7 @@ app static cfg st sessionId =
     dir "comments"
             (route [ ("single/:id", getCommentHandler st sessionId)
                    , ("chapter/:chapid/count/", getCountsHandler st)
-                   , ("chapter/:chapid/feed", getChapterFeedHandler st)
+                   , ("chapter/:chapid/feed", getChapterFeedHandler sessionId st)
                    , ("submit/:id", submitHandler st sessionId)
                    ]) <|>
     fileServe (cfgContentDir cfg) <|>
@@ -193,8 +196,8 @@ trackSession act = do
 --------------------------------------------------
 -- Handlers
 
-getChapterFeedHandler :: State -> Snap ()
-getChapterFeedHandler st = do
+getChapterFeedHandler :: SessionId -> State -> Snap ()
+getChapterFeedHandler sId st = do
   Just chapId <- mkChapterId <$> requireParam "chapid"
   makeAbsolute <- flip relativeTo <$> baseURL
   chapURL <- liftIO $ getChapterURI st chapId
@@ -207,11 +210,34 @@ getChapterFeedHandler st = do
                     ]
       finishWith =<< getResponse
     Just u -> do
-      let limit = Just 10
-      cs <- liftIO $ getChapterComments st chapId
-      modifyResponse $ addHeader "content-type" "application/atom+xml"
-      writeText $ T.pack $ XML.showTopElement $
-                Atom.xmlFeed $ commentFeed chapId cs u limit
+      limit <- fromMaybe 10 <$> getLimitParam "limit"
+      cs <- liftIO $ take limit <$> getChapterComments st chapId
+      fmt <- fromMaybe AtomFeed <$> getFormatParam "format"
+      case fmt of
+        AtomFeed ->
+            do modifyResponse $ addHeader "content-type" "application/atom+xml"
+               writeText $ T.pack $ XML.showTopElement $
+                         Atom.xmlFeed $ commentFeed chapId cs u
+        WebPage ->
+            do modifyResponse $ addHeader "content-type" "text/html"
+               writeText $ render $ chronoView sId chapId cs u
+
+getParamM :: (B.ByteString -> Maybe a) -> B.ByteString -> Snap (Maybe a)
+getParamM f name = (f =<<) <$> getParam name
+
+getLimitParam :: B.ByteString -- ^Parameter name
+              -> Snap (Maybe Int)
+getLimitParam = getParamM $ \lim ->
+                case reads $ B.unpack lim of
+                  [(n, [])] -> Just n
+                  _         -> Nothing -- log something here
+                                       -- because of the bad parse?
+
+data Format = AtomFeed | WebPage
+
+getFormatParam :: B.ByteString -> Snap (Maybe Format)
+getFormatParam = getParamM $ (`lookup` fs) . B.map toLower
+    where fs = [ ("atom", AtomFeed), ("html", WebPage) ]
 
 getCountsHandler :: State -> Snap ()
 getCountsHandler st = do
@@ -274,6 +300,30 @@ getParamUtf8 argName = fmap E.decodeUtf8 <$> getParam (E.encodeUtf8 argName)
 --------------------------------------------------
 -- Rendering comments
 
+chronoView :: SessionId -> ChapterId -> [(CommentId, Comment)] -> URI -> XHtml Page
+chronoView sId chId cs u =
+    html True $ do
+      head_ $ title $ pageTitle
+      body $ div' [ A.id_ "content" ] $
+           do h1 $ text pageTitle
+              p $ do
+                  text $ escape $ T.concat
+                           [ "This is a chronological listing of comments on "
+                           , chapterId chId
+                           , ". Click on each comment's link to view the "
+                           , "comment in context. You can also view them "
+                           , "inline using the links "
+                           ]
+                  a' [ A.href $ escapeAttr $ T.pack $ show u ] $ text $
+                     escape $ "within the document itself"
+                  text $ escape "."
+              forM_ cs $ \(cId, c) ->
+                  commentMarkup sId cId (Just u) c
+    where
+      pageTitle = escape $ T.concat [ "Chronological view of comments on "
+                                    , chapterId chId
+                                    ]
+
 getMarkup :: Block a => CommentId -> [Comment] -> Maybe SessionInfo
           -> SessionId -> XHtml a
 getMarkup cId cs si sid = do
@@ -291,7 +341,7 @@ getMarkup cId cs si sid = do
       div' [A.class_ "comment"] $
            text "Be the first to comment on this paragraph!"
       return ()
-    _   -> mapM_ (commentMarkup sid cId) cs
+    _   -> mapM_ (commentMarkup sid cId Nothing) cs
   newCommentForm cId si
   div_ $ span' [ A.class_ "comment_error" ] $ empty
 
@@ -331,15 +381,19 @@ newCommentForm cId msi =
       idAttr t = A.id_ (addId t)
       addId t = T.concat [t, commentId cId]
 
-commentMarkup :: Block a => SessionId -> CommentId -> Comment -> XHtml a
-commentMarkup sid _cId c =
+commentMarkup :: Block a => SessionId -> CommentId -> Maybe URI -> Comment
+              -> XHtml a
+commentMarkup sid cId mURI c =
     div' [A.class_ topCls] $ do
-      div' [A.class_ "username"] $
+      div' [A.class_ "username"] $ maybeLink $
            do text $ escape $ name
               text " "
               span' [A.class_ "date"] $ text $ escape $ fmtTime $ cDate c
       div' [A.class_ "comment-text"] $ text $ escape $ cComment c
     where
+      maybeLink = maybe span_ (toAnchor . addFrag) mURI
+      toAnchor u = a' [ A.href $ escapeAttr $ T.pack $ show u ]
+      addFrag u = u { uriFragment = '#':T.unpack (commentId cId) }
       isMine = sid == cSession c
       name | isMine = T.concat [ cName c, " (you)" ]
            | otherwise = cName c
