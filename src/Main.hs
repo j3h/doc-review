@@ -303,22 +303,27 @@ getParamUtf8 argName = fmap E.decodeUtf8 <$> getParam (E.encodeUtf8 argName)
 chronoView :: SessionId -> ChapterId -> [(CommentId, Comment)] -> URI -> XHtml Page
 chronoView sId chId cs u =
     html True $ do
-      head_ $ title $ pageTitle
+      head_ $ do
+        title $ pageTitle
+        link' [ A.type_ "text/css"
+              , A.href $ escape "/styles.css"
+              , A.rel "stylesheet" ]
       body $ div' [ A.id_ "content" ] $
-           do h1 $ text pageTitle
-              p $ do
-                  text $ escape $ T.concat
-                           [ "This is a chronological listing of comments on "
-                           , chapterId chId
-                           , ". Click on each comment's link to view the "
-                           , "comment in context. You can also view them "
-                           , "inline using the links "
-                           ]
-                  a' [ A.href $ escapeAttr $ T.pack $ show u ] $ text $
-                     escape $ "within the document itself"
-                  text $ escape "."
-              forM_ cs $ \(cId, c) ->
-                  commentMarkup sId cId (Just u) c
+           do div' [ A.class_ "navheader" ] $ h1 $ text pageTitle
+              div' [ A.class_ "chapter" ] $ do
+                  p $ do
+                    text $ escape $ T.concat
+                             [ "This is a chronological listing of comments on "
+                             , chapterId chId
+                             , ". Click on each comment's link to view the "
+                             , "comment in context. You can also view them "
+                             , "inline using the links "
+                             ]
+                    a' [ A.href $ escapeAttr $ T.pack $ show u ] $ text $
+                       escape $ "within the document itself"
+                    text $ escape "."
+                  forM_ cs $ \(cId, c) ->
+                      commentMarkup sId cId (Just u) c
     where
       pageTitle = escape $ T.concat [ "Chronological view of comments on "
                                     , chapterId chId
