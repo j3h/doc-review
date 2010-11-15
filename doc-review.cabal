@@ -35,7 +35,9 @@ Executable doc-review
   other-modules:
     Analyze,
     Config,
+    Feed,
     Privilege,
+    Report,
     Server,
     State.Disk,
     State.Logger,
