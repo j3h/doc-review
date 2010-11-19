@@ -13,6 +13,8 @@ import           Data.Time.Clock              ( getCurrentTime, addUTCTime )
 import           Data.Time.Clock.POSIX        ( getPOSIXTime
                                               , posixSecondsToUTCTime )
 import           Data.Time.Format             ( formatTime )
+import           Data.Function                ( on )
+import           Data.List                    ( sortBy, groupBy )
 import           Network.URI                  ( URI(uriFragment)
                                               , relativeTo
                                               , parseURI
@@ -85,7 +87,9 @@ main = do
 
             showChapter (mChId, cIds) =
                 maybe "(unnamed)" (showString "Chapter: " . T.unpack . chapterId) mChId:
-                map (showString "  " . T.unpack . commentId) cIds
+                map (showString "  " . showCommentId) cIds
+
+            showCommentId = (T.unpack . commentId)
 
             showFile (fn, chs) = [ ""
                                  , replicate 50 '='
@@ -94,11 +98,33 @@ main = do
                                  , ""
                                  ] ++ concatMap showChapter chs
 
+            dupes =
+                  filter ((> 1) . length) .
+                  groupBy ((==) `on` getCId) .
+                  sortBy (compare `on` getCId) .
+                  recs
+                where
+                  recs fs = do
+                        (fn, chs) <- fs
+                        (mChId, cIds) <- chs
+                        cId <- cIds
+                        [(fn, mChId, cId)]
+
+            getCId (_, _, cId) = cId
+
+            showDupes files = case map (map getCId) $ dupes files of
+                                [] -> ["No duplicate comment ids"]
+                                ds -> "Duplicate comment ids found:":
+                                      concatMap showDupeSet ds
+                where
+                  showDupeSet = map (showString "  " . show)
+
         in case sCfgStore cfg of
              Just mk -> loadChapters cDir =<< mk
              Nothing ->
                  do files <- analyze cDir
                     putStr $ unlines $ concatMap showFile files
+                    putStr $ unlines $ []:showDupes files
 
 -- |Scan the content directory for chapter HTML files and update the
 -- database to include all of the chapter mappings
