@@ -22,7 +22,6 @@ import           Prelude hiding               ( mapM_ )
 import           Snap.Iteratee                ( enumBS )
 import           Snap.Types
 import           Snap.Util.FileServe          ( fileServe )
-import           System.Console.GetOpt        ( usageInfo )
 import           System.Environment           ( getArgs, getProgName )
 import           System.Exit                  ( exitFailure, exitSuccess )
 import           System.FilePath              ( (</>) )
@@ -37,8 +36,8 @@ import qualified Text.XHtmlCombinators.Attributes as A
 import qualified Text.XML.Light.Output            as XML
 import qualified Text.Atom.Feed.Export            as Atom
 
-import           Config           ( Config(..), ScanType(..), parseOptions
-                                  , opts, Action(..) )
+import           Config           ( SConfig(..), ScanType(..), parseArgs
+                                  , Action(..), ScanConfig(..) )
 import           Analyze          ( analyze )
 import           Privilege        ( tryDropPrivilege )
 import           Server
@@ -47,51 +46,76 @@ import qualified State.Logger as L
 import           Paths_doc_review ( getDataFileName )
 import           Feed ( commentFeed )
 
-usage :: IO String
-usage = do
+usage :: (String -> String) -> IO String
+usage f = do
   pn <- getProgName
   return $ unlines $
              [ "Document review Web application, based on\
                \ http://book.realworldhaskell.org/"
              , ""
              , "Usage: " ++ pn ++ " [options]"
-             , usageInfo pn opts
+             , f pn
              ]
 
 main :: IO ()
 main = do
   args <- getArgs
-  cfg <-
-      case parseOptions args of
-        Left es -> do
-          putStr =<< usage
-          putStrLn $ unlines es
-          exitFailure
-        Right Help -> do
-          putStr =<< usage
-          exitSuccess
-        Right (Run c) -> return c
+  case parseArgs args of
+    Left (mkUsage, es) ->
+        do putStr =<< usage mkUsage
+           putStrLn $ unlines es
+           exitFailure
 
-  st <- maybe return L.wrap (cfgLogTo cfg) =<< cfgStore cfg
+    Right Help ->
+        do putStr =<< usage (const "XXX: tell what the actions are")
+           exitSuccess
 
-  let sc = scanDir cfg st
-      run = runServer cfg st
-  case cfgScanType cfg of
-    ScanOnly      -> sc
-    ScanOnStartup -> sc >> run
-    NoScan        -> run
+    Right (RunServer cfg) ->
+        do st <- maybe return L.wrap (cfgLogTo cfg) =<< cfgStore cfg
+
+           let sc = scanDir cfg st
+               run = runServer cfg st
+
+           case cfgScanType cfg of
+             ScanOnStartup -> sc >> run
+             NoScan        -> run
+
+    Right (Scan cfg) ->
+        let cDir = sCfgContentDir cfg
+
+            showChapter (mChId, cIds) =
+                maybe "(unnamed)" (showString "Chapter: " . T.unpack . chapterId) mChId:
+                map (showString "  " . T.unpack . commentId) cIds
+
+            showFile (fn, chs) = [ ""
+                                 , replicate 50 '='
+                                 , "Analysis of " ++ show fn
+                                 , replicate 50 '-'
+                                 , ""
+                                 ] ++ concatMap showChapter chs
+
+        in case sCfgStore cfg of
+             Just mk -> loadChapters cDir =<< mk
+             Nothing ->
+                 do files <- analyze cDir
+                    putStr $ unlines $ concatMap showFile files
 
 -- |Scan the content directory for chapter HTML files and update the
 -- database to include all of the chapter mappings
 loadChapters :: FilePath -> State -> IO ()
 loadChapters chapterDir st = do
-  files <- analyze chapterDir
+  chapters <- analyze chapterDir
+  storeChapters chapters st
+
+storeChapters :: [(String, [(Maybe ChapterId, [CommentId])])]
+              -> State -> IO ()
+storeChapters files st = do
   forM_ files $ \(fn, chapters) -> do
       let uri = parseRelativeReference fn
       forM_ chapters $ \(mChId, cIds) ->
           maybe (return ()) (\chId -> addChapter st chId cIds uri) mChId
 
-runServer :: Config -> State -> IO ()
+runServer :: SConfig -> State -> IO ()
 runServer cfg st = do
   static <- case cfgStaticDir cfg of
               Nothing -> getDataFileName "static"
@@ -109,10 +133,10 @@ runServer cfg st = do
   let dropPrivAct = liftIO dropPriv >> pass
   server sCfg $ dropPrivAct <|> trackSession (app static cfg st)
 
-scanDir :: Config -> State -> IO ()
+scanDir :: SConfig -> State -> IO ()
 scanDir = loadChapters . cfgContentDir
 
-app :: FilePath -> Config -> State -> SessionId -> Snap ()
+app :: FilePath -> SConfig -> State -> SessionId -> Snap ()
 app static cfg st sessionId =
     dir "comments"
             (route [ ("single/:id", getCommentHandler st sessionId)
