@@ -9,7 +9,10 @@ module Config
     )
 where
 
+import Control.Monad ( msum, guard, mplus )
+import Data.Char ( isAlphaNum, isSpace )
 import Network.URI ( parseRelativeReference, URI )
+import Data.Maybe ( fromMaybe )
 import System.Console.GetOpt
 
 import State.Types ( State )
@@ -58,9 +61,11 @@ acts = [ act serverAction
               )
 
 baseUsage :: String
-baseUsage = unlines ("Commands:":map showAct acts)
+baseUsage =
+    unlines ("Commands:":actDoc ++ "":storeDocumentation 78)
     where
-      showAct (cmd, (_, descr, _)) = concat ["  ", cmd, " ", descr]
+      actDoc = map ("  "++) $ twoColumn 76 $ map showAct $ acts
+      showAct (cmd, (_, descr, _)) = (cmd, descr)
 
 parseAction :: ActionSpec flg cfg -> [String] -> Either Usage Action
 parseAction act args =
@@ -176,9 +181,10 @@ serverOpts =
 
 -- Turn an option string into something that updates the configuration
 applyServerOption :: ServerOption -> Err (SConfig -> SConfig)
-applyServerOption (OStore sType) = do
-  st <- parseStore sType
-  return $ \cfg -> cfg { cfgStore = st }
+applyServerOption (OStore sType) =
+    case parseStore sType of
+      Nothing -> fail $ "Unknown store type: " ++ show sType
+      Just st -> return $ \cfg -> cfg { cfgStore = st }
 applyServerOption (OPort str) =
     case reads str of
       [(x, [])] -> return $ \cfg -> cfg { cfgPort = x }
@@ -230,9 +236,10 @@ data ScanOption
       deriving (Eq, Show)
 
 applyScanOption :: ScanOption -> Err (ScanConfig -> ScanConfig)
-applyScanOption (ScanStore sType) = do
-  st <- parseStore sType
-  return $ \cfg -> cfg { sCfgStore = Just st }
+applyScanOption (ScanStore sType) =
+    case parseStore sType of
+      Nothing -> fail $ "Unknown store type: " ++ show sType
+      Just st -> return $ \cfg -> cfg { sCfgStore = Just st }
 applyScanOption (ScanContentDir p) =
     return $ \cfg -> cfg { sCfgContentDir = p }
 
@@ -260,10 +267,96 @@ errs (x:xs) = let (es, as) = errs xs
                    Val x' -> (es, x':as)
 errs [] = ([], [])
 
-parseStore :: String -> Err (IO State)
-parseStore sType =
-    case break (== ':') sType of
-      ("mem", []) -> return $ State.Mem.new
-      ("fs", (':':fsDir)) -> return $ State.Disk.new fsDir
-      ("sqlite", (':':sFile)) -> return $ State.SQLite.new sFile
-      _ -> fail $ "I don't understand store type: " ++ show sType
+parseStore :: String -> Maybe (IO State)
+parseStore sType = msum $ map ((`parseOneStore` sType) . sdParse) stores
+
+data StoreDef a = SD { sdParse :: ParseStore a
+                     , sdDesc :: String
+                     }
+
+data ParseStore a
+    = PSConst String a
+    | PSArg String String (String -> Maybe a)
+
+parseOneStore :: ParseStore a -> String -> Maybe a
+parseOneStore (PSConst c x) s = guard (c == s) >> return x
+parseOneStore (PSArg pfx _ f) s =
+    case break (== ':') s of
+      (k, ':':s') | k == pfx -> f s'
+      _                      -> Nothing
+
+psArgStr :: String -> String -> (String -> a) -> ParseStore a
+psArgStr pfx desc f = PSArg pfx desc $ Just . f
+
+stores :: [ StoreDef (IO State) ]
+stores = [ SD (PSConst "mem" State.Mem.new)
+           "Use an ephemeral in-memory store (data will be lost when \
+           \the process ends)"
+         , SD (psArgStr "fs" "DIRECTORY" State.Disk.new)
+           "Store data in flat files in the specified directory. This \
+           \store is not ACID (has known race conditions and updates \
+           \are not atomic)"
+         , SD (psArgStr "sqlite" "DBNAME" State.SQLite.new)
+           "Store data in a SQLite database specified by DBNAME. Uses \
+           \the syntax of the SQLite API"
+         ]
+
+storeDocumentation :: Int -> [String]
+storeDocumentation lineLength =
+    wrap lineLength "Specifying data storage:" ++ showStores
+    where
+      showStores = map ("  "++) $
+                   twoColumn (lineLength - 2) $
+                   map showStore stores
+      showStore sd = (showPS $ sdParse sd, sdDesc sd)
+      showPS (PSConst s _) = s
+      showPS (PSArg s a _) = showString s $ ':':a
+
+--------------------------------------------------
+-- Laying out documentation
+
+-- |Lay out pairs of strings in two columns, under the specified line length
+twoColumn :: Int -> [(String, String)] -> [String]
+twoColumn w ps = concatMap fmt1 ps
+    where
+      firstColN = min (maximum $ map (length . fst) ps) 40
+
+      secondColN = w - firstColN - 1 - 2
+
+      fmt1 (a, b) = hcat firstColN secondColN a b
+
+      hcat n1 n2 = go
+          where
+            go [] [] = []
+            go xs ys =
+                let (c1, xs') = findBreak n1 xs
+                    (c2, ys') = findBreak n2 ys
+                    l = fillCol n1 c1 ++ " " ++ fillCol n2 c2
+                in l : go xs' ys'
+      fillCol n xs = take n $ xs ++ repeat ' '
+
+-- |Wrap a string at a certain line length, attempting to break at
+-- word boundaries
+wrap :: Int -> String -> [String]
+wrap n = go
+    where
+      go s = case findBreak n s of
+               ([], []) -> []
+               (l,  s') -> l:go s'
+
+-- |Attempt to break a string at a word boundary. As a last resort,
+-- arbitrarily break at the specified line limit
+findBreak :: Int -> String -> (String, String)
+findBreak n s = let (l, s') = fromMaybe (splitAt n s) $ go 0 id s
+                in (l, dropWhile isSpace s')
+    where
+      go l acc xs =
+          let ok = return (acc [], xs)
+          in case xs of
+               []     -> ok
+               (c:cs) ->
+                      let next = go (l + 1) (acc . (c:)) cs
+                      in case () of
+                           () | l >= n       -> Nothing
+                              | isAlphaNum c -> next
+                              | otherwise    -> next `mplus` ok
