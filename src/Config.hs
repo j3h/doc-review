@@ -5,7 +5,7 @@ module Config
     , ScanType(..)
     , Action(..)
     , parseArgs
-    , serverOpts
+    , usage
     )
 where
 
@@ -16,6 +16,79 @@ import State.Types ( State )
 import qualified State.Mem ( new )
 import qualified State.Disk ( new )
 import qualified State.SQLite ( new )
+
+type Usage = String
+
+data Action = Help Usage
+            | RunServer SConfig
+            | Scan ScanConfig
+
+usage :: Usage
+usage = baseUsage
+
+parseArgs :: [String] -> Either Usage Action
+parseArgs [] = Left $ unlines [baseUsage, "Please specify an action"]
+parseArgs (cmd:args) =
+    case lookup cmd acts of
+      Just (us, _, parse) ->
+          if any (`elem` args) [ "--help", "-h" ]
+          then Right $ Help us
+          else parse args
+      Nothing -> Left $ unlines [baseUsage, "Unknown action: " ++ show cmd]
+
+data ActionSpec flg cfg
+    = ActionSpec { asName   :: String
+                 , asDescr  :: String
+                 , asOpts   :: [OptDescr flg]
+                 , asParse  :: flg -> Err (cfg -> cfg)
+                 , asCfg    :: cfg
+                 , asAction :: cfg -> Action
+                 }
+
+acts :: [(String, (String, String, [String] -> Either Usage Action))]
+acts = [ act serverAction
+       , act scanAction
+       ]
+    where
+      act a = ( asName a
+              , ( usageInfo (asDescr a) (asOpts a)
+                , asDescr a
+                , parseAction a
+                )
+              )
+
+baseUsage :: String
+baseUsage = unlines ("Commands:":map showAct acts)
+    where
+      showAct (cmd, (_, descr, _)) = concat ["  ", cmd, " ", descr]
+
+parseAction :: ActionSpec flg cfg -> [String] -> Either Usage Action
+parseAction act args =
+    let result =
+            case getOpt Permute (asOpts act) args of
+              (os, [], []) -> sequenceE $ map (asParse act) os
+              (_, extra, es) ->
+                  Err $ case extra of
+                          [] -> es
+                          _  -> ("Unknown arguments: " ++ show extra):es
+    in case result of
+         Err es -> Left $ unlines $ [ usageInfo (asDescr act) (asOpts act)
+                                    , "Errors parsing arguments:"
+                                    ] ++ es
+         Val fs -> Right $ asAction act $ foldr ($) (asCfg act) fs
+
+--------------------------------------------------
+-- Server
+
+serverAction :: ActionSpec ServerOption SConfig
+serverAction =
+    ActionSpec { asName   = "run"
+               , asDescr  = "Run the HTTP server for Web-based document review"
+               , asOpts   = serverOpts
+               , asParse  = applyServerOption
+               , asCfg    = defaultServerConfig
+               , asAction = RunServer
+               }
 
 -- |The configurable settings for an instance of the comments server
 data SConfig =
@@ -37,45 +110,10 @@ data SConfig =
     , cfgLogTo       :: !(Maybe FilePath)
     }
 
-mkAction :: String
-         -> (t -> Either [String] t2)
-         -> [OptDescr a]
-         -> (t2 -> Action)
-         -> t
-         -> Either (String -> String, [String]) Action
-mkAction cmd par opts cons args =
-    case par args of
-      Left es -> Left (\pn -> usageInfo (pn ++ " " ++ cmd) opts, es)
-      Right c -> Right $ cons c
-
-parseArgs :: [String] -> Either (String -> String, [String]) Action
-parseArgs [] = Left (id, ["Please specify an action"])
-parseArgs args | any (`elem` args) [ "--help", "-h" ] = Right Help
-parseArgs (cmd:opts) =
-    case cmd of
-      "server" -> mkAction cmd parseServerOptions serverOpts RunServer opts
-      "scan"   -> mkAction cmd parseScanOptions scanOpts Scan opts
-      "help"   -> Right Help
-      _        -> Left (id, ["Unknown action: " ++ show cmd])
-
-data ScanConfig =
-    ScanConfig
-    { sCfgContentDir :: !(FilePath)
-    , sCfgStore      :: !(Maybe (IO State))
-    -- ^If this is Nothing, then just print out what we find.
-    }
-
-defaultScanConfig :: ScanConfig
-defaultScanConfig = ScanConfig "content" Nothing
-
-data Action = Help
-            | RunServer SConfig
-            | Scan ScanConfig
-
 -- |Default  settings (don't  save state  on disk,  run on  port 3000,
 -- store logs here, scan for ids on startup)
-defaultConfig :: SConfig
-defaultConfig =
+defaultServerConfig :: SConfig
+defaultServerConfig =
     SConfig
     { cfgStore       = State.Mem.new
     , cfgPort        = 3000
@@ -88,12 +126,6 @@ defaultConfig =
     , cfgRunAs       = Nothing
     , cfgLogTo       = Nothing
     }
-
--- |When/whether to scan for new commentable paragraphs in the content
--- directory
-data ScanType = ScanOnStartup
-              | NoScan
-                deriving Eq
 
 -- All of the defined options
 data ServerOption = OStore String
@@ -108,92 +140,11 @@ data ServerOption = OStore String
                   | OLogTo FilePath
                     deriving Eq
 
-data ScanOption
-    = ScanStore String
-    | ScanContentDir FilePath
-      deriving (Eq, Show)
-
--- Error monad (like either)
-data Err a = Err String | Val a
-instance Monad Err where
-    return        = Val
-    fail          = Err
-    (Err s) >>= _ = Err s
-    (Val x) >>= f = f x
-
--- Partition errors and successes
-errs :: [Err a] -> ([String], [a])
-errs (x:xs) = let (es, as) = errs xs
-              in case x of
-                   Err e -> (e:es, as)
-                   Val x' -> (es, x':as)
-errs [] = ([], [])
-
-parseStore :: String -> Err (IO State)
-parseStore sType =
-    case break (== ':') sType of
-      ("mem", []) -> return $ State.Mem.new
-      ("fs", (':':fsDir)) -> return $ State.Disk.new fsDir
-      ("sqlite", (':':sFile)) -> return $ State.SQLite.new sFile
-      _ -> fail $ "I don't understand store type: " ++ show sType
-
-applyScanOption :: ScanOption -> Err (ScanConfig -> ScanConfig)
-applyScanOption (ScanStore sType) = do
-  st <- parseStore sType
-  return $ \cfg -> cfg { sCfgStore = Just st }
-applyScanOption (ScanContentDir p) =
-    return $ \cfg -> cfg { sCfgContentDir = p }
-
--- Turn an option string into something that updates the configuration
-applyServerOption :: ServerOption -> Err (SConfig -> SConfig)
-applyServerOption (OStore sType) = do
-  st <- parseStore sType
-  return $ \cfg -> cfg { cfgStore = st }
-applyServerOption (OPort str) =
-    case reads str of
-      [(x, [])] -> return $ \cfg -> cfg { cfgPort = x }
-      _         -> fail $ "Bad port: " ++ show str
-applyServerOption (OLogDir str) = return $ \cfg -> cfg { cfgLogDir = str }
-applyServerOption (OHost str) = return $ \cfg -> cfg { cfgHostName = str }
-applyServerOption (OContentDir str) = return $ \cfg -> cfg { cfgContentDir = str }
-applyServerOption (OStaticDir str) = return $
-                               \cfg -> cfg { cfgStaticDir = Just str }
-applyServerOption (OScan st) = return $ \cfg -> cfg { cfgScanType = st }
-applyServerOption (ODefaultPage str) =
-    case parseRelativeReference str of
-      Nothing -> fail $ "Not a valid URI: " ++ show str
-      Just u  -> return $ \cfg ->
-                 cfg { cfgDefaultPage = Just u }
-applyServerOption (ORunAs str) = return $ \cfg -> cfg { cfgRunAs = Just str }
-applyServerOption (OLogTo str) = return $ \cfg -> cfg { cfgLogTo = Just str }
-
-parseOptionsG :: [OptDescr a] -> (a -> Err (c -> c)) -> c -> [String] -> Either [String] c
-parseOptionsG optsG apply mt args =
-    case getOpt Permute optsG args of
-      (os, [], []) -> case errs $ map apply os of
-                        ([], fs) -> Right $ foldr ($) mt fs
-                        (es, _)  -> Left es
-      (_, extra, es) ->
-          Left $ case extra of
-                   [] -> es
-                   _  -> ("Unknown arguments: " ++ show extra):es
-
--- |Parse command-line arguments
-parseServerOptions :: [String] -> Either [String] SConfig
-                -- ^List of error messages or a configuration.
-parseServerOptions =
-    parseOptionsG serverOpts applyServerOption defaultConfig
-
-parseScanOptions :: [String] -> Either [String] ScanConfig
-parseScanOptions = parseOptionsG scanOpts applyScanOption defaultScanConfig
-
-scanOpts :: [OptDescr ScanOption]
-scanOpts =
-    [ Option "" ["content-dir"] (ReqArg ScanContentDir "DIR")
-      "Scan this directory for content (default: \"content\")"
-    , Option "s" ["store"] (ReqArg ScanStore "STORE")
-      "The storage type. mem, fs:<dirname> or sqlite:<filename>"
-    ]
+-- |When/whether to scan for new commentable paragraphs in the content
+-- directory
+data ScanType = ScanOnStartup
+              | NoScan
+                deriving Eq
 
 serverOpts :: [OptDescr ServerOption]
 serverOpts =
@@ -222,3 +173,97 @@ serverOpts =
       "Write a binary log file as a backup in case of primary\n\
       \store failure"
     ]
+
+-- Turn an option string into something that updates the configuration
+applyServerOption :: ServerOption -> Err (SConfig -> SConfig)
+applyServerOption (OStore sType) = do
+  st <- parseStore sType
+  return $ \cfg -> cfg { cfgStore = st }
+applyServerOption (OPort str) =
+    case reads str of
+      [(x, [])] -> return $ \cfg -> cfg { cfgPort = x }
+      _         -> fail $ "Bad port: " ++ show str
+applyServerOption (OLogDir str) = return $ \cfg -> cfg { cfgLogDir = str }
+applyServerOption (OHost str) = return $ \cfg -> cfg { cfgHostName = str }
+applyServerOption (OContentDir str) = return $ \cfg -> cfg { cfgContentDir = str }
+applyServerOption (OStaticDir str) = return $
+                               \cfg -> cfg { cfgStaticDir = Just str }
+applyServerOption (OScan st) = return $ \cfg -> cfg { cfgScanType = st }
+applyServerOption (ODefaultPage str) =
+    case parseRelativeReference str of
+      Nothing -> fail $ "Not a valid URI: " ++ show str
+      Just u  -> return $ \cfg ->
+                 cfg { cfgDefaultPage = Just u }
+applyServerOption (ORunAs str) = return $ \cfg -> cfg { cfgRunAs = Just str }
+applyServerOption (OLogTo str) = return $ \cfg -> cfg { cfgLogTo = Just str }
+
+--------------------------------------------------
+-- 'scan' action
+
+scanAction :: ActionSpec ScanOption ScanConfig
+scanAction =
+    ActionSpec
+    { asName   = "scan"
+    , asDescr  = "Scan a set of documents for commentable \
+                 \items and (optionally) update a store"
+    , asOpts   = [ Option "" ["content-dir"] (ReqArg ScanContentDir "DIR")
+                   "Scan this directory for content (default: \"content\")"
+                 , Option "s" ["store"] (ReqArg ScanStore "STORE")
+                   "The storage type. mem, fs:<dirname> or sqlite:<filename>"
+                 ]
+
+    , asParse  = applyScanOption
+    , asCfg    = ScanConfig "content" Nothing
+    , asAction = Scan
+    }
+
+data ScanConfig =
+    ScanConfig
+    { sCfgContentDir :: !(FilePath)
+    , sCfgStore      :: !(Maybe (IO State))
+    -- ^If this is Nothing, then just print out what we find.
+    }
+
+data ScanOption
+    = ScanStore String
+    | ScanContentDir FilePath
+      deriving (Eq, Show)
+
+applyScanOption :: ScanOption -> Err (ScanConfig -> ScanConfig)
+applyScanOption (ScanStore sType) = do
+  st <- parseStore sType
+  return $ \cfg -> cfg { sCfgStore = Just st }
+applyScanOption (ScanContentDir p) =
+    return $ \cfg -> cfg { sCfgContentDir = p }
+
+--------------------------------------------------
+-- Helper code
+
+-- Error monad (like either)
+data Err a = Err [String] | Val a
+instance Monad Err where
+    return        = Val
+    fail          = Err . return
+    (Err s) >>= _ = Err s
+    (Val x) >>= f = f x
+
+sequenceE :: [Err a] -> Err [a]
+sequenceE xs = case errs xs of
+                 ([], as) -> Val as
+                 (es, _)  -> Err es
+
+-- Partition errors and successes
+errs :: [Err a] -> ([String], [a])
+errs (x:xs) = let (es, as) = errs xs
+              in case x of
+                   Err e -> (e ++ es, as)
+                   Val x' -> (es, x':as)
+errs [] = ([], [])
+
+parseStore :: String -> Err (IO State)
+parseStore sType =
+    case break (== ':') sType of
+      ("mem", []) -> return $ State.Mem.new
+      ("fs", (':':fsDir)) -> return $ State.Disk.new fsDir
+      ("sqlite", (':':sFile)) -> return $ State.SQLite.new sFile
+      _ -> fail $ "I don't understand store type: " ++ show sType

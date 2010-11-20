@@ -63,13 +63,12 @@ main :: IO ()
 main = do
   args <- getArgs
   case parseArgs args of
-    Left (mkUsage, es) ->
-        do putStr =<< usage mkUsage
-           putStrLn $ unlines es
+    Left usg ->
+        do putStr usg
            exitFailure
 
-    Right Help ->
-        do putStr =<< usage (const "XXX: tell what the actions are")
+    Right (Help usg) ->
+        do putStr usg
            exitSuccess
 
     Right (RunServer cfg) ->
