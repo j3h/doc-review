@@ -380,16 +380,44 @@ findBreak :: Int -> String -> (String, String)
 findBreak n s = let (l, s') = fromMaybe (splitAt n s) $ go 0 id s
                 in (l, dropWhile isSpace s')
     where
+      -- Look for the last word boundary in the first n characters of
+      -- the String, and if there is a word boundary, return the
+      -- String up to that last boundary and the remainder of the
+      -- String
+      go :: Int    -- ^Which character we are examining now
+         -> ShowS  -- ^The String up to this point
+         -> String -- ^The remainder of the String that we have to examine
+         -> Maybe (String, String)
+            -- ^If we found a breaking point before getting to the
+            -- limit, this is the String up to that breaking point and
+            -- then the remainder
       go l acc xs =
-          let ok = return (acc [], xs)
-          in case xs of
-               []     -> ok
-               (c:cs) ->
-                      let next = go (l + 1) (acc . (c:)) cs
-                      in case () of
-                           () | l >= n       -> Nothing
-                              | isAlphaNum c -> next
-                              | otherwise    -> next `mplus` ok
+          case xs of
+            -- If we get to the end and we haven't violated the length
+            -- constraint, then return what we've got.
+            []                    -> ok
+            (c:cs)
+                -- This violates the length constraint, so fail.
+                | l >= n       -> Nothing
 
+                -- An alphanumeric character is not allowed to be a
+                -- break point, so try to find a breaking point later
+                -- on or fail.
+                | isAlphaNum c -> next c cs
+
+                -- This is a valid breaking point, so try to see if
+                -- there is one further on in the string and if there
+                -- is not, then this one is the longest.
+                | otherwise    -> next c cs `mplus` ok
+          where
+            -- acc [] is what we have processed before examining this
+            -- character
+            ok = return (acc [], xs)
+
+            -- next looks for a breaking point further on in the
+            -- String
+            next c cs = go (l + 1) (acc . (c:)) cs
+
+-- |Prepend the specified number of spaces to each String
 indent :: Int -> [String] -> [String]
 indent n = map $ showString $ replicate n ' '
