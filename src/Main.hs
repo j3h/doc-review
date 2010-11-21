@@ -3,7 +3,7 @@ module Main where
 
 import           Control.Applicative          ( (<$>), (<*>), (<|>) )
 import           Control.Arrow                ( first )
-import           Control.Monad                ( replicateM, guard )
+import           Control.Monad                ( replicateM, guard, when )
 import           Control.Monad.IO.Class       ( liftIO )
 import           Control.Monad.Random         ( getRandomR )
 import           Data.Char                    ( toLower )
@@ -24,7 +24,7 @@ import           Prelude hiding               ( mapM_ )
 import           Snap.Iteratee                ( enumBS )
 import           Snap.Types
 import           Snap.Util.FileServe          ( fileServe )
-import           System.Environment           ( getArgs, getProgName )
+import           System.Environment           ( getArgs )
 import           System.Exit                  ( exitFailure, exitSuccess )
 import           System.FilePath              ( (</>) )
 import           System.Locale                ( defaultTimeLocale )
@@ -38,7 +38,7 @@ import qualified Text.XHtmlCombinators.Attributes as A
 import qualified Text.XML.Light.Output            as XML
 import qualified Text.Atom.Feed.Export            as Atom
 
-import           Config           ( SConfig(..), ScanType(..), parseArgs
+import           Config           ( SConfig(..), parseArgs
                                   , Action(..), ScanConfig(..) )
 import           Analyze          ( analyze )
 import           Privilege        ( tryDropPrivilege )
@@ -47,17 +47,6 @@ import           State.Types
 import qualified State.Logger as L
 import           Paths_doc_review ( getDataFileName )
 import           Feed ( commentFeed )
-
-usage :: (String -> String) -> IO String
-usage f = do
-  pn <- getProgName
-  return $ unlines $
-             [ "Document review Web application, based on\
-               \ http://book.realworldhaskell.org/"
-             , ""
-             , "Usage: " ++ pn ++ " [options]"
-             , f pn
-             ]
 
 main :: IO ()
 main = do
@@ -73,13 +62,8 @@ main = do
 
     Right (RunServer cfg) ->
         do st <- maybe return L.wrap (cfgLogTo cfg) =<< cfgStore cfg
-
-           let sc = scanDir cfg st
-               run = runServer cfg st
-
-           case cfgScanType cfg of
-             ScanOnStartup -> sc >> run
-             NoScan        -> run
+           when (cfgScanOnStart cfg) $ scanDir cfg st
+           runServer cfg st
 
     Right (Scan cfg) ->
         let cDir = sCfgContentDir cfg
