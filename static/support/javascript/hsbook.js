@@ -111,18 +111,31 @@ $(document).ready(function() {
   $.getJSON(location.protocol + "//" + location.host + "/comments/chapter/" +
 	    chapid + "/count/", function(data) {
     $.each(data, function(id, item) {
-      var s = item == 1 ? "" : "s";
       $("#comments_" + qid(id) + " span.commenttoggle").replaceWith(
-        "<a class='commenttoggle' id='toggle_" + id + "' " +
-	"pid='" + id + "' " +
-	"onclick='return loadComments(\"" + id + "\")' " +
-	"href='comments: show / hide'>" + item + " comment" + s + "</a>");
+          commentLink(id, item);
+      );
     });
     $("span.commenttoggle").each(function() {
       var id = $(this).attr("pid");
-      $(this).replaceWith("<a class='commenttoggle' id='toggle_" + id + "' " +
-			  "onclick='return loadComments(\"" + id + "\")' " +
-			  "href='comment: add'>No comments</a>");
+      $(this).replaceWith(commentLink(id, 0));
     });
   });
 });
+
+function commentLink(commentId, numComments) {
+    var desc, act;
+    if (numComments == 0) {
+        desc = "No comments";
+        act = "comment: add";
+    } else if (numComments == 1) {
+        desc = "1 comment";
+        act = "comments: show/hide";
+    } else {
+        desc = numComments + " comments";
+        act = "comments: show/hide";
+    }
+    return "<a class='commenttoggle' id='toggle_" + commentId + "' " +
+	"pid='" + commentId + "' " +
+	"onclick='return loadComments(\"" + commentId + "\")' " +
+	"href='" + act + "'>" + desc + "</a>";
+}
