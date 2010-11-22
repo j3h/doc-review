@@ -38,8 +38,9 @@ import qualified Text.XHtmlCombinators.Attributes as A
 import qualified Text.XML.Light.Output            as XML
 import qualified Text.Atom.Feed.Export            as Atom
 
-import           Config           ( SConfig(..), parseArgs
-                                  , Action(..), ScanConfig(..) )
+import           Config           ( parseArgs, unUsage, Usage, Action(..) )
+import qualified Config.Command.Run as Run
+import qualified Config.Command.Scan as Scan
 import           Analyze          ( analyze )
 import           Privilege        ( tryDropPrivilege )
 import           Server
@@ -48,25 +49,28 @@ import qualified State.Logger as L
 import           Paths_doc_review ( getDataFileName )
 import           Feed ( commentFeed )
 
+showUsage :: Usage -> IO ()
+showUsage = putStr . unUsage 78
+
 main :: IO ()
 main = do
   args <- getArgs
   case parseArgs args of
     Left usg ->
-        do putStr usg
+        do showUsage usg
            exitFailure
 
     Right (Help usg) ->
-        do putStr usg
+        do showUsage usg
            exitSuccess
 
     Right (RunServer cfg) ->
-        do st <- maybe return L.wrap (cfgLogTo cfg) =<< cfgStore cfg
-           when (cfgScanOnStart cfg) $ scanDir cfg st
+        do st <- maybe return L.wrap (Run.cfgLogTo cfg) =<< Run.cfgStore cfg
+           when (Run.cfgScanOnStart cfg) $ scanDir cfg st
            runServer cfg st
 
     Right (Scan cfg) ->
-        let cDir = sCfgContentDir cfg
+        let cDir = Scan.contentDir cfg
 
             showChapter (mChId, cIds) =
                 maybe "(unnamed)" (showString "Chapter: " . T.unpack . chapterId) mChId:
@@ -102,7 +106,7 @@ main = do
                 where
                   showDupeSet = map (showString "  " . show)
 
-        in case sCfgStore cfg of
+        in case Scan.store cfg of
              Just mk -> loadChapters cDir =<< mk
              Nothing ->
                  do files <- analyze cDir
@@ -124,28 +128,28 @@ storeChapters files st = do
       forM_ chapters $ \(mChId, cIds) ->
           maybe (return ()) (\chId -> addChapter st chId cIds uri) mChId
 
-runServer :: SConfig -> State -> IO ()
+runServer :: Run.Config -> State -> IO ()
 runServer cfg st = do
-  static <- case cfgStaticDir cfg of
+  static <- case Run.cfgStaticDir cfg of
               Nothing -> getDataFileName "static"
               Just s  -> return s
 
-  let hostBS = E.encodeUtf8 $ T.pack $ cfgHostName cfg
+  let hostBS = E.encodeUtf8 $ T.pack $ Run.cfgHostName cfg
       sCfg = emptyServerConfig
              { hostname = hostBS
-             , accessLog = Just $ cfgLogDir cfg </> "access.log"
-             , errorLog = Just $ cfgLogDir cfg </> "error.log"
-             , port = cfgPort cfg
+             , accessLog = Just $ Run.cfgLogDir cfg </> "access.log"
+             , errorLog = Just $ Run.cfgLogDir cfg </> "error.log"
+             , port = Run.cfgPort cfg
              }
 
-  dropPriv <- maybe (return (return ())) tryDropPrivilege $ cfgRunAs cfg
+  dropPriv <- maybe (return (return ())) tryDropPrivilege $ Run.cfgRunAs cfg
   let dropPrivAct = liftIO dropPriv >> pass
   server sCfg $ dropPrivAct <|> trackSession (app static cfg st)
 
-scanDir :: SConfig -> State -> IO ()
-scanDir = loadChapters . cfgContentDir
+scanDir :: Run.Config -> State -> IO ()
+scanDir = loadChapters . Run.cfgContentDir
 
-app :: FilePath -> SConfig -> State -> SessionId -> Snap ()
+app :: FilePath -> Run.Config -> State -> SessionId -> Snap ()
 app static cfg st sessionId =
     dir "comments"
             (route [ ("single/:id", getCommentHandler st sessionId)
@@ -153,9 +157,9 @@ app static cfg st sessionId =
                    , ("chapter/:chapid/feed", getChapterFeedHandler sessionId st)
                    , ("submit/:id", submitHandler st sessionId)
                    ]) <|>
-    fileServe (cfgContentDir cfg) <|>
+    fileServe (Run.cfgContentDir cfg) <|>
     fileServe static <|>
-    maybe pass (ifTop . relativeRedirect) (cfgDefaultPage cfg)
+    maybe pass (ifTop . relativeRedirect) (Run.cfgDefaultPage cfg)
 
 -- |Redirect to the supplied URI (relative to the current request's
 -- URI)

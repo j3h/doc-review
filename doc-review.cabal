@@ -35,6 +35,12 @@ Executable doc-review
   other-modules:
     Analyze,
     Config,
+    Config.Types,
+    Config.Format,
+    Config.Store,
+    Config.Command.Run,
+    Config.Command.Scan,
+    Config.GetOpt,
     Feed,
     Privilege,
     Report,
