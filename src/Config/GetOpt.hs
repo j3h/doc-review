@@ -3,6 +3,7 @@ module Config.GetOpt
     , MkCfg
     , optSpec
     , noArgs
+    , contentDirDesc
     , Err
     )
 where
@@ -17,6 +18,11 @@ import System.Console.GetOpt
 
 type Opts cfg = [OptDescr (Err (cfg -> cfg))]
 type MkCfg cfg = [String] -> Err cfg
+
+contentDirDesc :: (FilePath -> a) -> OptDescr a
+contentDirDesc f = Option "" ["content-dir"] (ReqArg f "DIR")
+                   "Where to find the marked up HTML files. Defaults to \
+                   \the current working directory."
 
 optSpec :: String -> (cfg -> a) -> Opts cfg -> MkCfg cfg -> String
         -> ActionSpec a

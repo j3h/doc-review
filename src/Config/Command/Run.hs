@@ -7,7 +7,7 @@ where
 
 import State.Types ( State )
 import Network.URI ( parseRelativeReference, URI )
-import Config.GetOpt ( MkCfg, Opts, noArgs, Err )
+import Config.GetOpt ( MkCfg, Opts, noArgs, Err, contentDirDesc )
 import Config.Store ( storeOptDescr, ParseStore )
 import System.Console.GetOpt
 import qualified State.Mem ( new )
@@ -40,7 +40,7 @@ mkCfg =
     , cfgPort        = 3000
     , cfgLogDir      = "."
     , cfgHostName    = "localhost"
-    , cfgContentDir  = "content"
+    , cfgContentDir  = "."
     , cfgStaticDir   = Nothing
     , cfgScanOnStart = True
     , cfgDefaultPage = Nothing
@@ -58,8 +58,7 @@ opts stores =
       "Scan for updated content at server startup (default)"
     , Option "" ["static-dir"] (ReqArg soptStaticDir "DIR")
       "Serve static files from this directory"
-    , Option "" ["content-dir"] (ReqArg soptContentDir "DIR")
-      "Serve content from this directory"
+    , contentDirDesc soptContentDir
     , Option "p" ["port"] (ReqArg soptPort "PORT")
       "Listen on this port"
     , Option "" ["log-dir"] (ReqArg soptLogDir "DIR")

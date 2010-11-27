@@ -1,5 +1,6 @@
 module Analyze
     ( htmlIds
+    , shouldAnalyzeFile
     , analyzeFile
     , analyze
     )
@@ -9,6 +10,7 @@ import qualified Text.HTML.Tagchup.Tag.Match as M
 import qualified Text.HTML.Tagchup.Tag as T
 import qualified Text.XML.Basic.Name.LowerCase as N
 import qualified Text.XML.Basic.Attribute as A
+import Data.Char ( toLower )
 import Data.Maybe ( mapMaybe, listToMaybe )
 import Control.Arrow ( second, first )
 import Control.Monad ( forM )
@@ -17,14 +19,20 @@ import System.FilePath ( (</>), takeExtension )
 import qualified Data.Text as Txt
 import State.Types ( ChapterId, mkChapterId, CommentId, mkCommentId )
 
+shouldAnalyzeFile :: FilePath -> Bool
+shouldAnalyzeFile fn = ext `elem` goodExts
+    where
+      ext = map toLower $ takeExtension fn
+      goodExts = [".html", ".htm", ".xhtml"]
+
 analyze :: FilePath -> IO [(FilePath, [(Maybe ChapterId, [CommentId])])]
 analyze fn = do
   let ignoreEntry = (`elem` [".", ".."])
 
       processEntry n
-          | takeExtension n == ".html" = processFile n `catch` \_ ->
-                                         processDir n
-          | otherwise                  = processDir n
+          | shouldAnalyzeFile n = processFile n `catch` \_ ->
+                                  processDir n
+          | otherwise           = processDir n
 
       processFile n = (\xs -> [(n, xs)]) `fmap` analyzeFile (fn </> n)
       processDir n = map (first (n </>)) `fmap` analyze (fn </> n)

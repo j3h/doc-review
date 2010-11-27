@@ -6,8 +6,7 @@ module Config.Command.Scan
 where
 
 import Config.Store ( storeOptDescr, ParseStore )
-import Config.GetOpt ( Opts, MkCfg, noArgs )
-import System.Console.GetOpt
+import Config.GetOpt ( Opts, MkCfg, noArgs, contentDirDesc )
 import State.Types ( State )
 
 data Config =
@@ -19,12 +18,9 @@ data Config =
 
 opts :: [ParseStore (IO State)] -> Opts Config
 opts ss =
-    [ Option "" ["content-dir"] (ReqArg setCDir "DIR")
-      "Scan this directory for content (default: \"content\")"
+    [ contentDirDesc $ \p -> return $ \cfg -> cfg { contentDir = p }
     , storeOptDescr ss $ \st cfg -> cfg { store = Just st }
     ]
-    where
-      setCDir p = return $ \cfg -> cfg { contentDir = p }
 
 mkCfg :: MkCfg Config
-mkCfg = noArgs $ Config "content" Nothing
+mkCfg = noArgs $ Config "." Nothing
