@@ -40,6 +40,7 @@ Executable doc-review
     Config.Store,
     Config.Command.Run,
     Config.Command.Scan,
+    Config.Command.Report,
     Config.GetOpt,
     Feed,
     Privilege,

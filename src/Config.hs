@@ -17,6 +17,8 @@ import Config.Types ( Usage(..), strUsage, ActionSpec(..)
                     , parseArgsG, CommandResult(..) )
 import Config.Format ( twoColumn, indent )
 import qualified Config.Command.Scan as Scan
+import qualified Config.Command.Report as Report
+import qualified Report as Report
 import qualified Config.Command.Run as Run
 import State.Types ( State )
 import qualified State.Mem ( new )
@@ -25,6 +27,7 @@ import qualified State.SQLite ( new )
 
 data Action = Help Usage
             | RunServer Run.Config
+            | Report Report.ReportConfig
             | Scan Scan.Config
 
 parseArgs :: [String] -> Either Usage Action
@@ -62,6 +65,8 @@ commands =
     , optSpec "scan" Scan (Scan.opts stores) Scan.mkCfg
       "Scan a set of documents for commentable items and (optionally) update \
       \a store"
+    , optSpec "report" Report Report.opts Report.mkCfg
+      "Process a set of binary log files and produce a usage report"
     , optSpec "help" Help [] (noArgs usage)
       "Show this help text"
     ]

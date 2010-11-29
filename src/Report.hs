@@ -1,18 +1,19 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Main
-    ( main )
+module Report
+    ( genReport
+    , analyzeFiles
+    , ReportConfig(..)
+    )
 where
 
 import Control.Applicative ( (<$>) )
-import Control.Monad       ( foldM, forM_, (>=>) )
+import Control.Monad       ( foldM, (>=>) )
 import Data.Monoid         ( Monoid(..) )
-import System.Environment  ( getArgs )
 import System.IO           ( IOMode(ReadMode), withBinaryFile )
 import qualified Data.ByteString.Lazy as B
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
 
 import State.Logger ( foldMapComments )
 import State.Types
@@ -42,27 +43,34 @@ stats cid _ c = CommentStats
 getStats :: FilePath -> IO CommentStats
 getStats = withContents $ foldMapComments stats
 
-
 withContents :: (B.ByteString -> IO a) -> FilePath -> IO a
 withContents f fn = withBinaryFile fn ReadMode $ B.hGetContents >=> f
 
-main :: IO ()
-main = do
-  args <- getArgs
-  allStats <- foldM (\s fn -> s `seq` (mappend s <$> getStats fn)) mempty args
-  putStrLn $ "Usage statistics for: " ++ unwords args
-  let total = sum $ Map.elems $ csTopicCount allStats
-  putStrLn $ "\n" ++ shows total " comments"
-  T.putStrLn "\nComment counts:"
-  forM_ (Map.toList $ csTopicCount allStats) $ \(cid, n) -> do
-      T.putStr "  "
-      T.putStr $ commentId cid
-      T.putStr " "
-      putStrLn $ show n
+data ReportConfig = ReportConfig [FilePath]
 
-  putStr "\n"
-  putStrLn $ case Map.size $ csUsers allStats of
-               1 -> "1 user contributing"
-               n -> shows n " users contributing"
-  putStrLn "\nE-mail addresses:"
-  forM_ (Set.toList $ csEmails allStats) $ T.putStrLn
+analyzeFiles :: ReportConfig -> IO CommentStats
+analyzeFiles (ReportConfig filenames) =
+  foldM (\s fn -> s `seq` (mappend s <$> getStats fn)) mempty filenames
+
+genReport :: ReportConfig -> CommentStats -> String
+genReport (ReportConfig args) allStats =
+    unlines $
+    [ "Usage statistics for: " ++ unwords args
+    , shows total " comments"
+    , ""
+    , "Comment counts:"
+    ] ++ commentLines ++
+    [ ""
+    , case Map.size $ csUsers allStats of
+        1 -> "1 user contributing"
+        n -> shows n " users contributing"
+    , ""
+    , "E-mail addresses:"
+    ] ++ emailAddrs
+    where
+      total = sum $ Map.elems $ csTopicCount allStats
+      showCommentStat (cid, n) =
+          concat ["  ", T.unpack $ commentId cid, " ", show n]
+      commentLines = map showCommentStat $ Map.toList $ csTopicCount allStats
+      indent = showString "  "
+      emailAddrs = map (indent . T.unpack) $ Set.toList $ csEmails allStats

@@ -38,6 +38,7 @@ import qualified Text.XHtmlCombinators.Attributes as A
 import qualified Text.XML.Light.Output            as XML
 import qualified Text.Atom.Feed.Export            as Atom
 
+import qualified Report as Report
 import           Config           ( parseArgs, unUsage, Usage, Action(..) )
 import qualified Config.Command.Run as Run
 import qualified Config.Command.Scan as Scan
@@ -63,6 +64,9 @@ main = do
     Right (Help usg) ->
         do showUsage usg
            exitSuccess
+
+    Right (Report cfg) ->
+        putStr . Report.genReport cfg =<< Report.analyzeFiles cfg
 
     Right (RunServer cfg) ->
         do st <- maybe return L.wrap (Run.cfgLogTo cfg) =<< Run.cfgStore cfg
