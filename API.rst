@@ -1,6 +1,14 @@
 API
 ==================================================
 
+This document roughly describes the API that is used between the
+doc-review Web server and the user's browser. This specification is
+not complete. I wrote it while attempting to reverse-engineer the API
+used by book.realworldhaskell.org.
+
+General notes
+--------------------------------------------------
+
 If there is more than one page that is being commented on per server,
 the id namespace is the same between documents.
 
