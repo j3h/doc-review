@@ -29,14 +29,14 @@ For most users, you can be up and running by following these steps:
     $ cabal install doc-review
 3. Test your documents::
 
-    $ doc-review --content-dir=$PATH_TO_YOUR_DOCUMENTS
+    $ doc-review run --content-dir=$PATH_TO_YOUR_DOCUMENTS
 
    Comments you leave when testing will not be saved when the server
    is restarted.
 4. Select your backend. Right now, that probably means the SQLite
    backend::
 
-    $ doc-review --content-dir=$PATH_TO_YOUR_DOCUMENTS
+    $ doc-review run --content-dir=$PATH_TO_YOUR_DOCUMENTS
        --store=sqlite:comments.db
 
    This command will create ``comments.db`` if necessary, and store all

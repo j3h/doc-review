@@ -5,9 +5,10 @@ Synopsis:            Document review Web application, like http://book.realworld
 Description: A standalone Web application that provides for
              paragraph-by-paragraph commentary by document reviewers,
              based on the user interface from
-             <http://book.realworldhaskell.org/>. It works on any Web
-             page with just a little bit of Javascript added that
-             makes it load the comment Web UI.
+             <http://book.realworldhaskell.org/>. Any Web page can be
+             configured to work with the service by adding just a
+             little bit of Javascript that makes it load the comment
+             Web UI.
 
 Author:              Josh Hoyt
 Maintainer:          josh.hoyt@galois.com
@@ -17,6 +18,8 @@ Build-type:          Simple
 Cabal-version:       >=1.6
 License:             BSD3
 License-File:        LICENSE
+Tested-with:         GHC == 6.12.3
+Homepage:            https://github.com/j3h/doc-review
 
 data-files:
       static/*.css,
