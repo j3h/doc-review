@@ -1,5 +1,5 @@
 Name:                doc-review
-Version:             0.6
+Version:             0.7
 Synopsis:            Document review Web application, like http://book.realworldhaskell.org/
 
 Description: A standalone Web application that provides for
