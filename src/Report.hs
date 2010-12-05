@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
 module Report
     ( genReport
     , analyzeFiles
