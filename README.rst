@@ -12,6 +12,9 @@ using Django. This implementation is intended to be as independent as
 possible from the authoring system that is used to produce a document,
 and to run in a wide variety of environments.
 
+If you have feature requests, bug reports or other feedback, please
+let me know!
+
 Quick Start
 --------------------------------------------------
 
@@ -212,36 +215,6 @@ Future plans
 --------------------------------------------------
 
 As usual, there are a whole list of features and changes that I'd like
-to make to this program. If a feature is important to you, or if you
-have an idea for a new feature, please let me know. The best way is to
-submit a patch!
-
-Future plans include:
-
-* Packaging the API as a library so that it can be integrated with
-  other Haskell Web applications
-* Features:
-
-  * Add a link field to the comment form and backend storage so that
-    commenters can provide a link to their blog or home page.
-  * Better comment viewing tools:
-
-    * View one user's annotations at a time
-    * Add a widget that shows an overview of the comments on a
-      document
-    * Show where in the document the comments are
-
-  * Have the server add the ``<script>`` and ``<link>`` tags to
-    documents in the content directory automatically
-  * Add a PostgreSQL storage backend
-  * Add a MySQL storage backend
-  * Make building SQLite support optional (so you do not need to build
-    it unless you are using that backend)
-  * Add support for handing proxy host headers so that URLs get
-    generated properly (e.g. X-Forwarded-Host)
-  * Remove the code for dropping OS privilege (it's not really
-    trustworthy, so it's a little bit of a misfeature)
-  * Add markup processing for the comments (e.g. Markdown in the user comments)
-
-If you have feature requests, bug reports or other feedback, please
-let me know!
+to make to this program. See TODO for this list. If a feature is
+important to you, or if you have an idea for a new feature, please let
+me know. The best way is to submit a patch!
