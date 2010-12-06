@@ -8,7 +8,7 @@ Description: A standalone Web application that provides for
              <http://book.realworldhaskell.org/>. Any Web page can be
              configured to work with the service by adding just a
              little bit of Javascript that makes it load the comment
-             Web UI.
+             Web UI. See the README or the homepage for more information.
 
 Author:              Josh Hoyt
 Maintainer:          josh.hoyt@galois.com
