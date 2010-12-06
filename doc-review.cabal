@@ -1,5 +1,5 @@
 Name:                doc-review
-Version:             0.7
+Version:             0.7.1
 Synopsis:            Document review Web application, like http://book.realworldhaskell.org/
 
 Description: A standalone Web application that provides for
@@ -27,6 +27,7 @@ data-files:
       static/support/icons/*.gif
 
 extra-source-files:
+      CHANGES.rst,
       README.rst,
       API.rst,
       TODO.rst
