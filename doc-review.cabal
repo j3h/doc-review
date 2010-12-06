@@ -59,7 +59,10 @@ Executable doc-review
     State.Logger,
     State.Mem,
     State.SQLite,
-    State.Types
+    State.Types,
+    DocReview.App,
+    DocReview.App.HTML,
+    DocReview.Scan
 
   Build-depends:
     base >= 4 && < 5,
