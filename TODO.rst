@@ -18,12 +18,16 @@
   * Have the server add the ``<script>`` and ``<link>`` tags to
     documents in the content directory automatically
 
-  * Add a PostgreSQL storage backend
+  * Data storage
 
-  * Add a MySQL storage backend
+    * Add a PostgreSQL storage backend
 
-  * Make building SQLite support optional (so you do not need to build
-    it unless you are using that backend)
+    * Add a MySQL storage backend
+
+    * Make building SQLite support optional (so you do not need to build
+      it unless you are using that backend)
+
+    * Make the flat-file backend reliable
 
   * Add support for handing proxy host headers so that URLs get
     generated properly (e.g. X-Forwarded-Host)
