@@ -26,6 +26,11 @@ data-files:
       static/support/javascript/*.js,
       static/support/icons/*.gif
 
+extra-source-files:
+      README.rst,
+      API.rst,
+      TODO.rst
+
 Flag test
   Description: Build the test executable (tests the store implementations)
   Manual: True
