@@ -40,6 +40,8 @@ main = do
 
     Right (RunServer cfg) ->
         do st <- maybe return L.wrap (Run.cfgLogTo cfg) =<< Run.cfgStore cfg
+
+           -- Scan the content directory (unless requested not to)
            when (Run.cfgScanOnStart cfg) $
                 do chapters <- analyze $ Run.cfgContentDir cfg
                    storeChapters chapters st
@@ -49,7 +51,13 @@ main = do
     Right (Scan cfg) ->
         do chapters <- analyze $ Scan.contentDir cfg
            case Scan.store cfg of
+             -- If a store was specified, scan the directory and store
+             -- the results in the store
              Just mk -> storeChapters chapters =<< mk
+
+             -- If no store was specified, scan the directory and dump
+             -- an analysis of the scan results to the console (check
+             -- for duplicate comment ids)
              Nothing -> putStr $ unlines $ showAnalysis chapters
 
 storeChapters :: [(String, [(Maybe ChapterId, [CommentId])])]
