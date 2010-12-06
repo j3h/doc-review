@@ -112,7 +112,7 @@ $(document).ready(function() {
 	    chapid + "/count/", function(data) {
     $.each(data, function(id, item) {
       $("#comments_" + qid(id) + " span.commenttoggle").replaceWith(
-          commentLink(id, item);
+          commentLink(id, item)
       );
     });
     $("span.commenttoggle").each(function() {
