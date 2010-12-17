@@ -6,6 +6,9 @@
   * Add a link field to the comment form and backend storage so that
     commenters can provide a link to their blog or home page.
 
+  * Improve request handling so that requests missing the trailing
+    ".html" are redirected to the appropriate place.
+
   * Better comment viewing tools:
 
     * View one user's annotations at a time
